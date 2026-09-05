@@ -180,3 +180,13 @@ public class AuthenticationController : ControllerBase
     {
     }
 }
+
+---
+
+## Environment Variables & ENValidatorUtility Rule
+
+- All secrets, configurations, connection strings, ports, and environment-dependent variables MUST be stored in the environment configuration (`.env`).
+- Never access `process.env` directly throughout the application codebase.
+- All environment variables must be retrieved and validated exclusively through the singleton `ENValidatorUtility` located in the global `Utilities/` folder.
+- `ENValidatorUtility` must follow the Singleton pattern with `ENValidatorUtility.Current`.
+- `ENValidatorUtility` must validate all required environment variables on startup and throw `ConfigurationCException` if any required environment variable is missing or invalid.
