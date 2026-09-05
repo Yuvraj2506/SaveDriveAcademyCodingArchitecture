@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { CleanStudentData, CleanPaymentRecord } from "@/backend/services/dbService";
+import { CleanStudentData, CleanPaymentRecord } from "@/types";
 
 interface ReceiptModalProps {
   receiptData: {

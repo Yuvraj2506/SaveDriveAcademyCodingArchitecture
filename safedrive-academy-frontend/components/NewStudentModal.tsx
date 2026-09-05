@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CleanPendingRequest, PaymentMethod, TrainingType } from "@/backend/services/dbService";
+import { CleanPendingRequest, PaymentMethod, TrainingType } from "@/types";
 
 interface NewStudentModalProps {
   isOpen: boolean;

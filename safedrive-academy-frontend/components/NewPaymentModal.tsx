@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
-import { CleanStudentData, CleanPendingRequest, PaymentMethod } from "@/backend/services/dbService";
+import { CleanStudentData, CleanPendingRequest, PaymentMethod } from "@/types";
 
 interface NewPaymentModalProps {
   isOpen: boolean;

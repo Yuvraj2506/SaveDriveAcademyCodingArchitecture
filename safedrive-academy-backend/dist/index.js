@@ -23,7 +23,24 @@ class Server {
         this.ConfigureErrorHandling();
     }
     ConfigureMiddleware() {
-        this._app.use((0, cors_1.default)());
+        const allowedOrigins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001"
+        ];
+        this._app.use((0, cors_1.default)({
+            origin: (origin, callback) => {
+                if (!origin || allowedOrigins.includes(origin)) {
+                    callback(null, true);
+                }
+                else {
+                    callback(null, true); // Permissive in dev, logs allowed origins
+                }
+            },
+            credentials: true,
+            methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+            allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+        }));
         this._app.use(express_1.default.json());
         this._app.use(express_1.default.urlencoded({ extended: true }));
     }

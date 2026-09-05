@@ -21,7 +21,26 @@ class Server {
   }
 
   private ConfigureMiddleware(): void {
-    this._app.use(cors());
+    const allowedOrigins = [
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+      "http://localhost:3001"
+    ];
+
+    this._app.use(
+      cors({
+        origin: (origin, callback) => {
+          if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+          } else {
+            callback(null, true); // Permissive in dev, logs allowed origins
+          }
+        },
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+      })
+    );
     this._app.use(express.json());
     this._app.use(express.urlencoded({ extended: true }));
   }

@@ -19,7 +19,7 @@ export default function HomePage() {
   };
 
   const handleLoginSuccess = (role: AuthRole) => {
-    if (role === "user") {
+    if (role === "student" || role === "user") {
       router.push("/dashboard");
     } else {
       router.push("/admin");

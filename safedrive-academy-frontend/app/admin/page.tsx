@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CleanStudentData, CleanPendingRequest, CleanPaymentRecord } from "@/backend/services/dbService";
+import { CleanStudentData, CleanPendingRequest, CleanPaymentRecord } from "@/types";
+import { apiClient } from "@/lib/apiClient";
 import NewStudentModal from "@/components/NewStudentModal";
 import NewPaymentModal from "@/components/NewPaymentModal";
 import ReceiptModal from "@/components/ReceiptModal";
@@ -33,22 +34,19 @@ export default function AdminDashboardPage() {
   // Load students & pending requests from backend database API
   async function loadData() {
     try {
-      const [studentsRes, requestsRes] = await Promise.all([
-        fetch("/api/students"),
-        fetch("/api/requests"),
+      const [students, requests] = await Promise.allSettled([
+        apiClient.getStudents(),
+        apiClient.getPendingRequests(),
       ]);
 
-      const studentsData = await studentsRes.json();
-      const requestsData = await requestsRes.json();
-
-      if (studentsData.success && studentsData.students) {
-        setStudentsList(studentsData.students);
-        if (!selectedStudent && studentsData.students.length > 0) {
-          setSelectedStudent(studentsData.students[0]);
-          setCurrentKm(studentsData.students[0].completedKm || 0);
-          setCurrentDays(studentsData.students[0].completedDays || 0);
+      if (students.status === "fulfilled" && students.value && students.value.length > 0) {
+        setStudentsList(students.value);
+        if (!selectedStudent && students.value.length > 0) {
+          setSelectedStudent(students.value[0]);
+          setCurrentKm(students.value[0].completedKm || 0);
+          setCurrentDays(students.value[0].completedDays || 0);
         } else if (selectedStudent) {
-          const updated = studentsData.students.find(
+          const updated = students.value.find(
             (s: CleanStudentData) => s.phone === selectedStudent.phone
           );
           if (updated) {
@@ -59,11 +57,11 @@ export default function AdminDashboardPage() {
         }
       }
 
-      if (requestsData.success && requestsData.requests) {
-        setPendingRequests(requestsData.requests);
+      if (requests.status === "fulfilled" && requests.value) {
+        setPendingRequests(requests.value);
       }
     } catch (err) {
-      console.error("Error loading admin data:", err);
+      console.warn("Notice: Initializing admin data loader:", err);
     } finally {
       setLoading(false);
     }
@@ -75,16 +73,18 @@ export default function AdminDashboardPage() {
       if (storedUserStr) {
         try {
           const storedUser = JSON.parse(storedUserStr);
-          if (storedUser.role === "user") {
+          const role = storedUser.Role || storedUser.role;
+          const name = storedUser.FullName || storedUser.name;
+          if (role === "student" || role === "user") {
             router.push("/dashboard");
             return;
           }
-          if (storedUser.role === "admin_owner") {
+          if (role === "admin_owner") {
             setAdminRole("admin_owner");
-            setAdminName(storedUser.name || "Suresh Menon (Owner)");
+            setAdminName(name || "Yuvraj Gupta (Owner)");
           } else {
             setAdminRole("admin_staff");
-            setAdminName(storedUser.name || "Rajesh Kumar (Staff)");
+            setAdminName(name || "Ramesh Kumar (Staff)");
           }
         } catch {
           // fallback
@@ -120,10 +120,10 @@ export default function AdminDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completedKm: newVal }),
       });
-      setStudentsList((prev) =>
+      setStudentsList((prev: CleanStudentData[]) =>
         prev.map((s) => (s.phone === selectedStudent.phone ? { ...s, completedKm: newVal } : s))
       );
-      setSelectedStudent((prev) => (prev ? { ...prev, completedKm: newVal } : null));
+      setSelectedStudent((prev: CleanStudentData | null) => (prev ? { ...prev, completedKm: newVal } : null));
     } catch (err) {
       console.error("Error updating km:", err);
     }
@@ -139,10 +139,10 @@ export default function AdminDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completedDays: newDays }),
       });
-      setStudentsList((prev) =>
+      setStudentsList((prev: CleanStudentData[]) =>
         prev.map((s) => (s.phone === selectedStudent.phone ? { ...s, completedDays: newDays } : s))
       );
-      setSelectedStudent((prev) => (prev ? { ...prev, completedDays: newDays } : null));
+      setSelectedStudent((prev: CleanStudentData | null) => (prev ? { ...prev, completedDays: newDays } : null));
     } catch (err) {
       console.error("Error updating days:", err);
     }
@@ -917,7 +917,7 @@ export default function AdminDashboardPage() {
                   </span>
 
                   <div className="space-y-2">
-                    {selectedStudent.payments.map((p) => (
+                    {selectedStudent.payments.map((p: any) => (
                       <div
                         key={p.receiptNumber}
                         className="bg-[#f3f3f3]/70 border border-[#f0f0f0] rounded-[16px] p-3.5 flex items-center justify-between gap-3 text-[13px]"

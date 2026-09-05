@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AuthRole } from "./AuthModal";
-import { PendingStudentRequest } from "./NewStudentModal";
+import { PendingStudentRequest } from "@/types";
 
 export interface PaymentRecord {
   receiptNumber: string;

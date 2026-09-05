@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
+import { useToast } from "./ToastContext";
+import { apiClient } from "@/lib/apiClient";
 
-export type AuthRole = "user" | "admin_staff" | "admin_owner";
+export type AuthRole = "student" | "admin_staff" | "admin_owner" | "user";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -17,6 +19,7 @@ export default function AuthModal({
   onClose,
   onLoginSuccess,
 }: AuthModalProps) {
+  const { showToast } = useToast();
   const [mainTab, setMainTab] = useState<"user" | "admin">(defaultRole);
   const [adminSubRole, setAdminSubRole] = useState<"staff" | "owner">("staff");
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
@@ -43,67 +46,68 @@ export default function AuthModal({
     setIsFirstTimeSetup(false);
     if (type === "user_4w") {
       setMainTab("user");
-      setIdentifier("+91 98765 43210");
-      setPassword("demoStudent2026");
+      setIdentifier("9876543212");
+      setPassword("StudentPass@123");
     } else if (type === "user_2w") {
       setMainTab("user");
-      setIdentifier("+91 91234 56789");
-      setPassword("demoStudent2026");
+      setIdentifier("9876543213");
+      setPassword("StudentPass@123");
     } else if (type === "staff") {
       setMainTab("admin");
       setAdminSubRole("staff");
-      setIdentifier("staff.rajesh@safedrive.io");
-      setPassword("demoStaff2026");
+      setIdentifier("9876543211");
+      setPassword("StaffPass@123");
     } else {
       setMainTab("admin");
       setAdminSubRole("owner");
-      setIdentifier("owner.suresh@safedrive.io");
-      setPassword("demoOwner2026");
+      setIdentifier("9876543210");
+      setPassword("OwnerPass@123");
     }
   };
 
-  // 1. Regular Login Submission
+  // 1. Regular Login Submission via Express Backend
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    const cleanIdentifier = identifier.trim();
+    if (!cleanIdentifier) {
+      const msg = "Please enter your registered 10-digit mobile number.";
+      setErrorMessage(msg);
+      showToast(msg, "warning", "Input Required");
+      return;
+    }
+
+    if (!password) {
+      const msg = "Please enter your password.";
+      setErrorMessage(msg);
+      showToast(msg, "warning", "Input Required");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          identifier: identifier.trim(),
-          password,
-          requestedRole: mainTab,
-          adminSubRole: mainTab === "admin" ? adminSubRole : undefined,
-        }),
-      });
+      const data = await apiClient.login(cleanIdentifier, password);
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        setErrorMessage(data.message || "Authentication failed. Please check your credentials.");
-        setLoading(false);
-        return;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("safedrive_auth_token", data.Token);
+        localStorage.setItem("safedrive_user", JSON.stringify(data.User));
       }
 
-      if (typeof window !== "undefined" && data.session?.token) {
-        localStorage.setItem("safedrive_auth_token", data.session.token);
-        localStorage.setItem("safedrive_user", JSON.stringify(data.user));
-      }
-
-      setSuccessMessage(data.message || "Authentication successful!");
+      setSuccessMessage(`Welcome back, ${data.User.FullName}!`);
+      showToast(`Welcome back, ${data.User.FullName}!`, "success", "Signed In Successfully");
 
       setTimeout(() => {
         setLoading(false);
         setSuccessMessage(null);
-        onLoginSuccess(data.user.role, data.user.phone || identifier.trim(), data.user.name);
+        onLoginSuccess(data.User.Role as AuthRole, data.User.PhoneNumber, data.User.FullName);
         onClose();
-      }, 900);
+      }, 700);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to connect to authentication server";
+      const msg = err instanceof Error ? err.message : "Failed to connect to authentication server.";
       setErrorMessage(msg);
+      showToast(msg, "error", "Sign In Failed");
       setLoading(false);
     }
   };
@@ -123,17 +127,21 @@ export default function AuthModal({
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        setErrorMessage(data.message || "Mobile number not registered in approved students.");
+        const msg = data.message || "Mobile number not registered in approved students.";
+        setErrorMessage(msg);
+        showToast(msg, "error", "Verification Failed");
         setLoading(false);
         return;
       }
 
       setVerifiedName(data.studentName || "Student");
       setSetupStep("set_password");
+      showToast("Mobile number verified! Please create your password.", "info", "Phone Verified");
       setLoading(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Verification failed";
       setErrorMessage(msg);
+      showToast(msg, "error", "Network Error");
       setLoading(false);
     }
   };
@@ -143,8 +151,17 @@ export default function AuthModal({
     e.preventDefault();
     setErrorMessage(null);
 
+    if (newPassword.length < 8) {
+      const msg = "Password must be at least 8 characters long.";
+      setErrorMessage(msg);
+      showToast(msg, "warning", "Validation Error");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
-      setErrorMessage("Passwords do not match. Please re-enter.");
+      const msg = "Passwords do not match. Please re-enter.";
+      setErrorMessage(msg);
+      showToast(msg, "warning", "Validation Error");
       return;
     }
 
@@ -159,7 +176,9 @@ export default function AuthModal({
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        setErrorMessage(data.message || "Failed to set password.");
+        const msg = data.message || "Failed to set password.";
+        setErrorMessage(msg);
+        showToast(msg, "error", "Activation Failed");
         setLoading(false);
         return;
       }
@@ -170,16 +189,18 @@ export default function AuthModal({
       }
 
       setSuccessMessage("Password set successfully! Logging in to your dashboard...");
+      showToast("Account activated successfully!", "success", "Welcome");
 
       setTimeout(() => {
         setLoading(false);
         setSuccessMessage(null);
-        onLoginSuccess("user", setupPhone.trim(), verifiedName || "Student");
+        onLoginSuccess("student", setupPhone.trim(), verifiedName || "Student");
         onClose();
-      }, 1000);
+      }, 900);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to set password";
       setErrorMessage(msg);
+      showToast(msg, "error", "Network Error");
       setLoading(false);
     }
   };
@@ -212,7 +233,7 @@ export default function AuthModal({
           </h2>
           <p className="text-[13px] text-[#707070]">
             {isFirstTimeSetup
-              ? "Verify your registered +91 mobile number to create your password."
+              ? "Verify your registered 10-digit mobile number to create your password."
               : "Access your driving training records and fees ledger."}
           </p>
         </div>
@@ -280,10 +301,10 @@ export default function AuthModal({
           </div>
         )}
 
-        {/* Error Alert */}
+        {/* Error Alert Box */}
         {errorMessage && (
           <div className="mb-3.5 p-3 rounded-[16px] bg-red-50 border border-red-200 text-red-700 text-[12px] flex items-start gap-2">
-            <span className="font-bold">⚠️</span>
+            <span className="font-bold">!</span>
             <span>{errorMessage}</span>
           </div>
         )}
@@ -296,22 +317,20 @@ export default function AuthModal({
             <p className="text-[12px] text-[#707070]">Opening dashboard...</p>
           </div>
         ) : isFirstTimeSetup ? (
-          /* ═══════════════════════════════════════════════════════
-              FIRST-TIME STUDENT PASSWORD SETUP FORM
-              ═══════════════════════════════════════════════════════ */
+          /* FIRST-TIME STUDENT PASSWORD SETUP FORM */
           <div className="space-y-4">
             {setupStep === "verify" ? (
               <form onSubmit={handleVerifyPhone} className="space-y-3.5">
                 <div>
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
-                    Enter Registered Mobile Number (+91) *
+                    Enter Registered Mobile Number (10 Digits) *
                   </label>
                   <input
                     type="text"
                     required
                     value={setupPhone}
                     onChange={(e) => setSetupPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
+                    placeholder="9876543210"
                     className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
                   />
                   <span className="text-[11px] text-[#707070] mt-1 block">
@@ -352,17 +371,17 @@ export default function AuthModal({
                 <div className="p-3 bg-[#f3f3f3] rounded-[16px] text-[12px] space-y-0.5">
                   <span className="text-[#707070] block">Verified Student Record:</span>
                   <span className="font-semibold text-[#141414] text-[14px] block">{verifiedName}</span>
-                  <span className="text-[#707070] block">📞 {setupPhone}</span>
+                  <span className="text-[#707070] block">Phone: {setupPhone}</span>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
-                    Create New Password *
+                    Create New Password (min 8 chars) *
                   </label>
                   <input
                     type="password"
                     required
-                    minLength={4}
+                    minLength={8}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password"
@@ -377,7 +396,7 @@ export default function AuthModal({
                   <input
                     type="password"
                     required
-                    minLength={4}
+                    minLength={8}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Re-enter new password"
@@ -403,30 +422,18 @@ export default function AuthModal({
             )}
           </div>
         ) : (
-          /* ═══════════════════════════════════════════════════════
-              REGULAR SIGN IN FORM
-              ═══════════════════════════════════════════════════════ */
+          /* REGULAR SIGN IN FORM (EXPRESS BACKEND AUTH) */
           <form onSubmit={handleLoginSubmit} className="space-y-3.5">
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
-                {mainTab === "user"
-                  ? "Registered Mobile Number (+91)"
-                  : adminSubRole === "staff"
-                  ? "Staff Email / Mobile Phone"
-                  : "Owner Email Address"}
+                Registered 10-Digit Mobile Number *
               </label>
               <input
                 type="text"
                 required
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder={
-                  mainTab === "user"
-                    ? "+91 98765 43210"
-                    : adminSubRole === "staff"
-                    ? "staff.rajesh@safedrive.io"
-                    : "owner.suresh@safedrive.io"
-                }
+                placeholder="9876543210"
                 className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
               />
             </div>
@@ -434,7 +441,7 @@ export default function AuthModal({
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070]">
-                  Password
+                  Password (min 8 characters) *
                 </label>
                 <a href="#" className="text-[12px] text-[#707070] hover:text-[#141414]">
                   Forgot?
@@ -502,14 +509,14 @@ export default function AuthModal({
                 onClick={() => handleDemoFill("user_4w")}
                 className="px-2.5 py-1 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[11px] font-medium text-[#141414] cursor-pointer"
               >
-                Student (4-Wheeler)
+                Student (4W)
               </button>
               <button
                 type="button"
                 onClick={() => handleDemoFill("user_2w")}
                 className="px-2.5 py-1 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[11px] font-medium text-[#141414] cursor-pointer"
               >
-                Student (2-Wheeler)
+                Student (2W)
               </button>
               <button
                 type="button"
