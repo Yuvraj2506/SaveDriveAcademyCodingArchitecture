@@ -5,6 +5,7 @@ const ValidationCException_1 = require("../../../Exceptions/ValidationCException
 const IndianPhoneCValidator_1 = require("../../../Validators/IndianPhoneCValidator");
 const PasswordCValidator_1 = require("../../../Validators/PasswordCValidator");
 const AuthenticationConstant_1 = require("../Constants/AuthenticationConstant");
+const UserRoleEnum_1 = require("../Models/UserRoleEnum");
 class AuthenticationAssertion {
     static _current = new AuthenticationAssertion();
     static get Current() {
@@ -24,6 +25,9 @@ class AuthenticationAssertion {
         }
         if (!PasswordCValidator_1.PasswordCValidator.Current.Validate(request.Password)) {
             validationErrors.push(AuthenticationConstant_1.AuthenticationConstant.PASSWORD_REQUIRED);
+        }
+        if (request.ExpectedRole && !Object.values(UserRoleEnum_1.UserRoleEnum).includes(request.ExpectedRole)) {
+            validationErrors.push(AuthenticationConstant_1.AuthenticationConstant.INVALID_EXPECTED_ROLE);
         }
         if (validationErrors.length > 0) {
             throw new ValidationCException_1.ValidationCException(validationErrors);

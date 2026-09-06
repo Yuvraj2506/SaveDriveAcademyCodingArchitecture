@@ -197,6 +197,10 @@ export function formatFriendlyError(error: unknown, fallbackMessage: string = "A
 function translateTechnicalMessage(raw: string): string {
   const text = raw.toLowerCase();
 
+  if (text.includes("please switch to") || text.includes("cannot be activated via the student portal")) {
+    return raw;
+  }
+
   if (text.includes("failed to fetch") || text.includes("network error") || text.includes("econnrefused")) {
     return "Unable to connect to the SafeDrive server. Please ensure the backend is running and check your network connection.";
   }
@@ -302,7 +306,11 @@ function mapToCleanStudentData(item: any): CleanStudentData {
 
 export const apiClient = {
   // Authentication & Session
-  async login(phoneNumber: string, password: string): Promise<LoginResultDTO> {
+  async login(
+    phoneNumber: string,
+    password: string,
+    expectedRole?: "student" | "admin_staff" | "admin_owner"
+  ): Promise<LoginResultDTO> {
     const cleanPhone = phoneNumber.replace(/\D/g, "").slice(-10);
 
     let response: Response;
@@ -316,6 +324,7 @@ export const apiClient = {
         body: JSON.stringify({
           PhoneNumber: cleanPhone,
           Password: password,
+          ...(expectedRole ? { ExpectedRole: expectedRole } : {}),
         }),
       });
     } catch (networkError) {
