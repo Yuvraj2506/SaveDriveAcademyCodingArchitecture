@@ -7,6 +7,7 @@ export interface IUserDocument extends Document {
   FullName: string;
   Role: UserRoleEnum;
   IsActive: boolean;
+  RefreshTokens: string[];
   CreatedAt: Date;
   UpdatedAt: Date;
 }
@@ -39,6 +40,10 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
     IsActive: {
       type: Boolean,
       default: true
+    },
+    RefreshTokens: {
+      type: [String],
+      default: []
     }
   },
   {

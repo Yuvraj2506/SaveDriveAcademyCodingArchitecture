@@ -9,6 +9,10 @@ const ENValidatorUtility_1 = require("./Utilities/ENValidatorUtility");
 const MongoDbConnectionUtility_1 = require("./Utilities/MongoDbConnectionUtility");
 const ApplicationRouteFactory_1 = require("./Factories/ApplicationRouteFactory");
 const AuthenticationController_1 = require("./Features/Authentication/AuthenticationController");
+const StaffController_1 = require("./Features/Staff/StaffController");
+const OwnerController_1 = require("./Features/Owner/OwnerController");
+const AuthRoleMiddleware_1 = require("./Middlewares/AuthRoleMiddleware");
+const UserRoleEnum_1 = require("./Features/Authentication/Models/UserRoleEnum");
 const GlobalErrorMiddleware_1 = require("./Middlewares/GlobalErrorMiddleware");
 const ApiResponseClass_1 = require("./Models/Classes/ApiResponseClass");
 class Server {
@@ -52,6 +56,8 @@ class Server {
             }, "SafeDrive Academy backend is running.", 200));
         });
         this._app.use(ApplicationRouteFactory_1.ApplicationRouteFactory.AuthenticationRoutes.ControllerURL, AuthenticationController_1.AuthenticationController.Current.Router);
+        this._app.use(ApplicationRouteFactory_1.ApplicationRouteFactory.StaffRoutes.ControllerURL, AuthRoleMiddleware_1.AuthRoleMiddleware.Current.AuthorizeRoles(UserRoleEnum_1.UserRoleEnum.Staff, UserRoleEnum_1.UserRoleEnum.Owner), StaffController_1.StaffController.Current.Router);
+        this._app.use(ApplicationRouteFactory_1.ApplicationRouteFactory.OwnerRoutes.ControllerURL, AuthRoleMiddleware_1.AuthRoleMiddleware.Current.AuthorizeRoles(UserRoleEnum_1.UserRoleEnum.Owner), OwnerController_1.OwnerController.Current.Router);
         this._app.use((req, res) => {
             res.status(404).json(ApiResponseClass_1.ApiResponseClass.Failed(`Endpoint ${req.method} ${req.originalUrl} not found.`, ["Route not found."], 404));
         });

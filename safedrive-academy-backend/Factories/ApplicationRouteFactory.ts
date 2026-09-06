@@ -10,6 +10,8 @@ export class ApplicationRouteFactory {
   public static readonly AuthenticationRoutes = {
     ControllerURL: "/api/authentication",
     Login: "/login",
+    RefreshToken: "/refresh",
+    Logout: "/logout",
     VerifyPhone: "/verify-phone",
     SetPassword: "/set-password"
   } as const;
@@ -29,6 +31,24 @@ export class ApplicationRouteFactory {
     Create: "/",
     Approve: "/:id/approve",
     Reject: "/:id/reject"
+  } as const;
+
+  public static readonly StaffRoutes = {
+    ControllerURL: "/api/staff",
+    StudentRequests: "/student-requests",
+    Students: "/students",
+    UpdateKm: "/students/:id/km",
+    UpdateDays: "/students/:id/days"
+  } as const;
+
+  public static readonly OwnerRoutes = {
+    ControllerURL: "/api/owner",
+    StudentRequests: "/student-requests",
+    ApproveRequest: "/student-requests/:id/approve",
+    RejectRequest: "/student-requests/:id/reject",
+    Students: "/students",
+    UpdateStudent: "/students/:id",
+    DeleteStudent: "/students/:id"
   } as const;
 }
 

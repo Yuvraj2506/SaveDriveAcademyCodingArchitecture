@@ -1,0 +1,27 @@
+
+
+
+
+
+
+server ------------------ client
+
+
+
+Public API
+/login { username: jettspanner, passwrod: Saahil123 }
+/signup
+/createAccount
+
+
+
+1. Jettspanner123
+
+Private API
+/user/updateAccountDetails { name: jettspanner123 }
+    - ["Authentication": "Bearer $fdasfdsafdafdasfdsf"] ✅
+    - ["Authentication": "Bearer $fdasfdsafdafdasfdsf"] ❌
+
+Resposne:
+200 OK {"success": true, "message": "Updated Successfully!" }
+403 OK {"success": false, "message": "JWT Token Missing!" }

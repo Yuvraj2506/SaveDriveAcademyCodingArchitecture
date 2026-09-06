@@ -4,6 +4,10 @@ import { ENValidatorUtility } from "./Utilities/ENValidatorUtility";
 import { MongoDbConnectionUtility } from "./Utilities/MongoDbConnectionUtility";
 import { ApplicationRouteFactory } from "./Factories/ApplicationRouteFactory";
 import { AuthenticationController } from "./Features/Authentication/AuthenticationController";
+import { StaffController } from "./Features/Staff/StaffController";
+import { OwnerController } from "./Features/Owner/OwnerController";
+import { AuthRoleMiddleware } from "./Middlewares/AuthRoleMiddleware";
+import { UserRoleEnum } from "./Features/Authentication/Models/UserRoleEnum";
 import { GlobalErrorMiddleware } from "./Middlewares/GlobalErrorMiddleware";
 import { ApiResponseClass } from "./Models/Classes/ApiResponseClass";
 
@@ -62,6 +66,18 @@ class Server {
     this._app.use(
       ApplicationRouteFactory.AuthenticationRoutes.ControllerURL,
       AuthenticationController.Current.Router
+    );
+
+    this._app.use(
+      ApplicationRouteFactory.StaffRoutes.ControllerURL,
+      AuthRoleMiddleware.Current.AuthorizeRoles(UserRoleEnum.Staff, UserRoleEnum.Owner),
+      StaffController.Current.Router
+    );
+
+    this._app.use(
+      ApplicationRouteFactory.OwnerRoutes.ControllerURL,
+      AuthRoleMiddleware.Current.AuthorizeRoles(UserRoleEnum.Owner),
+      OwnerController.Current.Router
     );
 
     this._app.use((req: Request, res: Response) => {

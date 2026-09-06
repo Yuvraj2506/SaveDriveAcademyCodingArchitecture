@@ -3,6 +3,9 @@ import { IndianPhoneCValidator } from "../../../Validators/IndianPhoneCValidator
 import { PasswordCValidator } from "../../../Validators/PasswordCValidator";
 import { AuthenticationConstant } from "../Constants/AuthenticationConstant";
 import { LoginRequestDTO } from "../Models/LoginRequestDTO";
+import { RefreshTokenRequestDTO } from "../Models/RefreshTokenRequestDTO";
+import { VerifyPhoneRequestDTO } from "../Models/VerifyPhoneRequestDTO";
+import { SetPasswordRequestDTO } from "../Models/SetPasswordRequestDTO";
 
 export class AuthenticationAssertion {
   private static readonly _current: AuthenticationAssertion = new AuthenticationAssertion();
@@ -23,6 +26,52 @@ export class AuthenticationAssertion {
   }
 
   public AssertLoginRequest(request: LoginRequestDTO | null | undefined): void {
+    this.CheckForNullRequest(request, AuthenticationConstant.REQUEST_BODY_EMPTY);
+
+    const validationErrors: string[] = [];
+
+    if (!IndianPhoneCValidator.Current.Validate(request!.PhoneNumber)) {
+      validationErrors.push(AuthenticationConstant.PHONE_REQUIRED);
+    }
+
+    if (!PasswordCValidator.Current.Validate(request!.Password)) {
+      validationErrors.push(AuthenticationConstant.PASSWORD_REQUIRED);
+    }
+
+    if (validationErrors.length > 0) {
+      throw new ValidationCException(validationErrors);
+    }
+  }
+
+  public AssertRefreshTokenRequest(request: RefreshTokenRequestDTO | null | undefined): void {
+    this.CheckForNullRequest(request, AuthenticationConstant.REQUEST_BODY_EMPTY);
+
+    const validationErrors: string[] = [];
+
+    if (!request!.RefreshToken || typeof request!.RefreshToken !== "string" || request!.RefreshToken.trim() === "") {
+      validationErrors.push(AuthenticationConstant.REFRESH_TOKEN_REQUIRED);
+    }
+
+    if (validationErrors.length > 0) {
+      throw new ValidationCException(validationErrors);
+    }
+  }
+
+  public AssertVerifyPhoneRequest(request: VerifyPhoneRequestDTO | null | undefined): void {
+    this.CheckForNullRequest(request, AuthenticationConstant.REQUEST_BODY_EMPTY);
+
+    const validationErrors: string[] = [];
+
+    if (!IndianPhoneCValidator.Current.Validate(request!.PhoneNumber)) {
+      validationErrors.push(AuthenticationConstant.PHONE_REQUIRED);
+    }
+
+    if (validationErrors.length > 0) {
+      throw new ValidationCException(validationErrors);
+    }
+  }
+
+  public AssertSetPasswordRequest(request: SetPasswordRequestDTO | null | undefined): void {
     this.CheckForNullRequest(request, AuthenticationConstant.REQUEST_BODY_EMPTY);
 
     const validationErrors: string[] = [];

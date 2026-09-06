@@ -6,9 +6,10 @@ import { CleanStudentData, CleanPaymentRecord } from "@/types";
 import ReceiptModal from "@/components/ReceiptModal";
 import Footer from "@/components/Footer";
 
-import { apiClient } from "@/lib/apiClient";
+import { apiClient, AUTH_KEYS } from "@/lib/apiClient";
+import AuthGuard from "@/components/AuthGuard";
 
-export default function StudentDashboardPage() {
+function StudentDashboardContent() {
   const router = useRouter();
   const [student, setStudent] = useState<CleanStudentData | null>(null);
   const [currentKm, setCurrentKm] = useState<number>(0);
@@ -25,7 +26,7 @@ export default function StudentDashboardPage() {
       let userRole = "student";
 
       if (typeof window !== "undefined") {
-        const storedUserStr = localStorage.getItem("safedrive_user");
+        const storedUserStr = localStorage.getItem(AUTH_KEYS.USER) || localStorage.getItem("safedrive_user");
         if (storedUserStr) {
           try {
             const storedUser = JSON.parse(storedUserStr);
@@ -97,11 +98,8 @@ export default function StudentDashboardPage() {
     loadStudentData();
   }, [router]);
 
-  const handleSignOut = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("safedrive_auth_token");
-      localStorage.removeItem("safedrive_user");
-    }
+  const handleSignOut = async () => {
+    await apiClient.logout();
     router.push("/");
   };
 
@@ -467,5 +465,13 @@ export default function StudentDashboardPage() {
         onClose={() => setReceiptModalData(null)}
       />
     </div>
+  );
+}
+
+export default function StudentDashboardPage() {
+  return (
+    <AuthGuard allowedRoles={["student", "user"]}>
+      <StudentDashboardContent />
+    </AuthGuard>
   );
 }
