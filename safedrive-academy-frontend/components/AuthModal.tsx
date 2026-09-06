@@ -97,8 +97,15 @@ export default function AuthModal({
 
     setLoading(true);
 
+    const activeExpectedRole: "student" | "admin_staff" | "admin_owner" =
+      mainTab === "user"
+        ? "student"
+        : adminSubRole === "staff"
+        ? "admin_staff"
+        : "admin_owner";
+
     try {
-      const data = await apiClient.login(cleanIdentifier, password);
+      const data = await apiClient.login(cleanIdentifier, password, activeExpectedRole);
 
       if (typeof window !== "undefined") {
         setTokens(data.Token, data.RefreshToken);
@@ -186,6 +193,21 @@ export default function AuthModal({
       showToast(msg, "error", "Activation Failed");
       setLoading(false);
     }
+  };
+
+  const getSuggestedRoleSwitch = (msg: string | null) => {
+    if (!msg) return null;
+    const lower = msg.toLowerCase();
+    if (lower.includes("admin portal (staff)") || lower.includes("registered as staff")) {
+      return { tab: "admin" as const, subRole: "staff" as const, label: "Switch to Staff Portal" };
+    }
+    if (lower.includes("admin portal (owner)") || lower.includes("registered as academy owner")) {
+      return { tab: "admin" as const, subRole: "owner" as const, label: "Switch to Owner Portal" };
+    }
+    if (lower.includes("student portal") || lower.includes("registered as a student")) {
+      return { tab: "user" as const, subRole: null, label: "Switch to Student Portal" };
+    }
+    return null;
   };
 
   return (
@@ -306,9 +328,33 @@ export default function AuthModal({
 
         {/* Error Alert Box */}
         {errorMessage && (
-          <div className="mb-3.5 p-3 rounded-[16px] bg-red-50 border border-red-200 text-red-700 text-[12px] flex items-start gap-2">
-            <span className="font-bold">!</span>
-            <span>{errorMessage}</span>
+          <div className="mb-3.5 p-3 rounded-[16px] bg-red-50 border border-red-200 text-red-700 text-[12px] space-y-2">
+            <div className="flex items-start gap-2">
+              <span className="font-bold shrink-0">!</span>
+              <span className="flex-1">{errorMessage}</span>
+            </div>
+            {(() => {
+              const suggested = getSuggestedRoleSwitch(errorMessage);
+              if (!suggested) return null;
+              return (
+                <div className="pt-0.5 pl-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMainTab(suggested.tab);
+                      if (suggested.subRole) {
+                        setAdminSubRole(suggested.subRole);
+                      }
+                      setErrorMessage(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-700 hover:bg-red-800 text-white rounded-full font-semibold text-[11px] transition-all cursor-pointer shadow-sm"
+                  >
+                    <span>{suggested.label}</span>
+                    <span>→</span>
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -429,14 +475,24 @@ export default function AuthModal({
           <form onSubmit={handleLoginSubmit} className="space-y-3.5">
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
-                Registered 10-Digit Mobile Number *
+                {mainTab === "user"
+                  ? "Student Registered Mobile Number *"
+                  : adminSubRole === "staff"
+                  ? "Staff Registered Mobile Number *"
+                  : "Owner Registered Mobile Number *"}
               </label>
               <input
                 type="text"
                 required
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="9876543210"
+                placeholder={
+                  mainTab === "user"
+                    ? "Enter 10-digit student mobile number"
+                    : adminSubRole === "staff"
+                    ? "Enter 10-digit staff mobile number"
+                    : "Enter 10-digit owner mobile number"
+                }
                 className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
               />
             </div>

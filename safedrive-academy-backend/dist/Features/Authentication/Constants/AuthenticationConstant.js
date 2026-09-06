@@ -18,5 +18,7 @@ class AuthenticationConstant {
     static REGISTRATION_REJECTED = "Your registration request was declined. Please contact academy office.";
     static PHONE_VERIFIED_SUCCESS = "Mobile number verified successfully. Please set your password.";
     static ACCOUNT_ACTIVATED_SUCCESS = "Account activated and password set successfully.";
+    static INVALID_EXPECTED_ROLE = "Expected role is invalid. Allowed values are student, admin_staff, or admin_owner.";
+    static STAFF_CANNOT_ACTIVATE_STUDENT = "This mobile number is registered as Staff/Owner and cannot be activated via the student portal.";
 }
 exports.AuthenticationConstant = AuthenticationConstant;

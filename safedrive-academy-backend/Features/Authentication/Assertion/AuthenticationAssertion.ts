@@ -2,6 +2,7 @@ import { ValidationCException } from "../../../Exceptions/ValidationCException";
 import { IndianPhoneCValidator } from "../../../Validators/IndianPhoneCValidator";
 import { PasswordCValidator } from "../../../Validators/PasswordCValidator";
 import { AuthenticationConstant } from "../Constants/AuthenticationConstant";
+import { UserRoleEnum } from "../Models/UserRoleEnum";
 import { LoginRequestDTO } from "../Models/LoginRequestDTO";
 import { RefreshTokenRequestDTO } from "../Models/RefreshTokenRequestDTO";
 import { VerifyPhoneRequestDTO } from "../Models/VerifyPhoneRequestDTO";
@@ -36,6 +37,10 @@ export class AuthenticationAssertion {
 
     if (!PasswordCValidator.Current.Validate(request!.Password)) {
       validationErrors.push(AuthenticationConstant.PASSWORD_REQUIRED);
+    }
+
+    if (request!.ExpectedRole && !Object.values(UserRoleEnum).includes(request!.ExpectedRole)) {
+      validationErrors.push(AuthenticationConstant.INVALID_EXPECTED_ROLE);
     }
 
     if (validationErrors.length > 0) {

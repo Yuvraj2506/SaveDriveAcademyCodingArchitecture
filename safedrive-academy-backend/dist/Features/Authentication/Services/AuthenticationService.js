@@ -35,6 +35,19 @@ class AuthenticationService {
         if (!isPasswordMatch) {
             throw new UnauthorizedCException_1.UnauthorizedCException(AuthenticationConstant_1.AuthenticationConstant.INVALID_CREDENTIALS);
         }
+        if (request.ExpectedRole && user.Role !== request.ExpectedRole) {
+            let roleLabel = "a Student";
+            let correctPortal = "Student Portal";
+            if (user.Role === UserRoleEnum_1.UserRoleEnum.Staff) {
+                roleLabel = "Staff";
+                correctPortal = "Admin Portal (Staff)";
+            }
+            else if (user.Role === UserRoleEnum_1.UserRoleEnum.Owner) {
+                roleLabel = "Academy Owner";
+                correctPortal = "Admin Portal (Owner)";
+            }
+            throw new UnauthorizedCException_1.UnauthorizedCException(`This account is registered as ${roleLabel}. Please switch to the ${correctPortal} to sign in.`);
+        }
         const tokenPayload = {
             Id: user._id.toString(),
             PhoneNumber: user.PhoneNumber,
@@ -147,9 +160,12 @@ class AuthenticationService {
     }
     async VerifyPhoneAsync(request) {
         const normalizedPhone = request.PhoneNumber.trim();
+        const existingUser = await UserModel_1.UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
+        if (existingUser && (existingUser.Role === UserRoleEnum_1.UserRoleEnum.Staff || existingUser.Role === UserRoleEnum_1.UserRoleEnum.Owner)) {
+            throw new ValidationCException_1.ValidationCException(AuthenticationConstant_1.AuthenticationConstant.STAFF_CANNOT_ACTIVATE_STUDENT);
+        }
         const student = await StudentModel_1.StudentModel.findOne({ PhoneNumber: normalizedPhone }).exec();
         if (!student) {
-            const existingUser = await UserModel_1.UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
             if (existingUser && existingUser.Role === UserRoleEnum_1.UserRoleEnum.Student) {
                 return {
                     PhoneNumber: existingUser.PhoneNumber,
@@ -175,6 +191,10 @@ class AuthenticationService {
     }
     async SetPasswordAsync(request) {
         const normalizedPhone = request.PhoneNumber.trim();
+        const existingUser = await UserModel_1.UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
+        if (existingUser && (existingUser.Role === UserRoleEnum_1.UserRoleEnum.Staff || existingUser.Role === UserRoleEnum_1.UserRoleEnum.Owner)) {
+            throw new ValidationCException_1.ValidationCException(AuthenticationConstant_1.AuthenticationConstant.STAFF_CANNOT_ACTIVATE_STUDENT);
+        }
         const student = await StudentModel_1.StudentModel.findOne({ PhoneNumber: normalizedPhone }).exec();
         let studentName = "Student";
         if (student) {
@@ -187,7 +207,6 @@ class AuthenticationService {
             studentName = student.Name;
         }
         else {
-            const existingUser = await UserModel_1.UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
             if (!existingUser) {
                 throw new NotFoundCException_1.NotFoundCException(AuthenticationConstant_1.AuthenticationConstant.REGISTRATION_NOT_FOUND);
             }

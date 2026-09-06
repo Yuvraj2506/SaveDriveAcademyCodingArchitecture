@@ -15,5 +15,7 @@ export class AuthenticationConstant {
   public static readonly REGISTRATION_REJECTED: string = "Your registration request was declined. Please contact academy office.";
   public static readonly PHONE_VERIFIED_SUCCESS: string = "Mobile number verified successfully. Please set your password.";
   public static readonly ACCOUNT_ACTIVATED_SUCCESS: string = "Account activated and password set successfully.";
+  public static readonly INVALID_EXPECTED_ROLE: string = "Expected role is invalid. Allowed values are student, admin_staff, or admin_owner.";
+  public static readonly STAFF_CANNOT_ACTIVATE_STUDENT: string = "This mobile number is registered as Staff/Owner and cannot be activated via the student portal.";
 }
 

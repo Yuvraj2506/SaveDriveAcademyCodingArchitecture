@@ -46,6 +46,21 @@ export class AuthenticationService {
       throw new UnauthorizedCException(AuthenticationConstant.INVALID_CREDENTIALS);
     }
 
+    if (request.ExpectedRole && user.Role !== request.ExpectedRole) {
+      let roleLabel = "a Student";
+      let correctPortal = "Student Portal";
+      if (user.Role === UserRoleEnum.Staff) {
+        roleLabel = "Staff";
+        correctPortal = "Admin Portal (Staff)";
+      } else if (user.Role === UserRoleEnum.Owner) {
+        roleLabel = "Academy Owner";
+        correctPortal = "Admin Portal (Owner)";
+      }
+      throw new UnauthorizedCException(
+        `This account is registered as ${roleLabel}. Please switch to the ${correctPortal} to sign in.`
+      );
+    }
+
     const tokenPayload = {
       Id: user._id.toString(),
       PhoneNumber: user.PhoneNumber,
@@ -183,10 +198,14 @@ export class AuthenticationService {
   public async VerifyPhoneAsync(request: VerifyPhoneRequestDTO): Promise<VerifyPhoneResponseDTO> {
     const normalizedPhone: string = request.PhoneNumber.trim();
 
+    const existingUser = await UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
+    if (existingUser && (existingUser.Role === UserRoleEnum.Staff || existingUser.Role === UserRoleEnum.Owner)) {
+      throw new ValidationCException(AuthenticationConstant.STAFF_CANNOT_ACTIVATE_STUDENT);
+    }
+
     const student = await StudentModel.findOne({ PhoneNumber: normalizedPhone }).exec();
 
     if (!student) {
-      const existingUser = await UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
       if (existingUser && existingUser.Role === UserRoleEnum.Student) {
         return {
           PhoneNumber: existingUser.PhoneNumber,
@@ -218,6 +237,11 @@ export class AuthenticationService {
   public async SetPasswordAsync(request: SetPasswordRequestDTO): Promise<LoginResponseDTO> {
     const normalizedPhone: string = request.PhoneNumber.trim();
 
+    const existingUser = await UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
+    if (existingUser && (existingUser.Role === UserRoleEnum.Staff || existingUser.Role === UserRoleEnum.Owner)) {
+      throw new ValidationCException(AuthenticationConstant.STAFF_CANNOT_ACTIVATE_STUDENT);
+    }
+
     const student = await StudentModel.findOne({ PhoneNumber: normalizedPhone }).exec();
 
     let studentName = "Student";
@@ -230,7 +254,6 @@ export class AuthenticationService {
       }
       studentName = student.Name;
     } else {
-      const existingUser = await UserModel.findOne({ PhoneNumber: normalizedPhone }).exec();
       if (!existingUser) {
         throw new NotFoundCException(AuthenticationConstant.REGISTRATION_NOT_FOUND);
       }
