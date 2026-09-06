@@ -8,6 +8,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const MongoDbConnectionUtility_1 = require("./MongoDbConnectionUtility");
 const UserModel_1 = require("../Features/Authentication/Models/UserModel");
 const UserRoleEnum_1 = require("../Features/Authentication/Models/UserRoleEnum");
+const StudentModel_1 = require("../Models/StudentModel");
 class DatabaseSeederUtility {
     static _current = new DatabaseSeederUtility();
     static get Current() {
@@ -67,6 +68,102 @@ class DatabaseSeederUtility {
                 console.log(`    - Password: ${user.PlainPassword}`);
                 console.log(`    - User ID:  ${updatedUser._id}\n`);
             }
+            // Seed StudentModel entries for student users
+            await StudentModel_1.StudentModel.findOneAndUpdate({ PhoneNumber: "9876543212" }, {
+                $set: {
+                    Name: "Aarav Sharma",
+                    PhoneNumber: "9876543212",
+                    VehicleType: "4-Wheeler",
+                    CoursePackage: "4-Wheeler Personal (120 km Target)",
+                    TrainingType: "4w_personal",
+                    TargetKm: 120,
+                    CompletedKm: 42,
+                    TotalDays: 15,
+                    CompletedDays: 7,
+                    TotalCourseFee: 8500,
+                    TotalPaid: 5000,
+                    RemainingDue: 3500,
+                    AssignedInstructor: "Vikram Singh (Senior Trainer)",
+                    PaymentMethod: "UPI",
+                    RequestedBy: "Ramesh Kumar (Staff)",
+                    RequestedDate: "01 Sep 2026",
+                    ApprovedBy: "Yuvraj Gupta (Owner)",
+                    ApprovedDate: "01 Sep 2026",
+                    Status: StudentModel_1.StudentRequestStatusEnum.Approved,
+                    Payments: [
+                        {
+                            ReceiptNumber: "REC-2026-089",
+                            Date: "01 Sep 2026",
+                            Method: "UPI",
+                            Amount: 5000,
+                            RecordedBy: "Ramesh Kumar (Staff)"
+                        }
+                    ]
+                }
+            }, { upsert: true, returnDocument: "after", setDefaultsOnInsert: true });
+            await StudentModel_1.StudentModel.findOneAndUpdate({ PhoneNumber: "9876543213" }, {
+                $set: {
+                    Name: "Priya Patel",
+                    PhoneNumber: "9876543213",
+                    VehicleType: "2-Wheeler",
+                    CoursePackage: "2-Wheeler Gearless Scooty (15 Days)",
+                    TrainingType: "2w_scooty",
+                    TargetKm: 0,
+                    CompletedKm: 0,
+                    TotalDays: 15,
+                    CompletedDays: 11,
+                    TotalCourseFee: 4500,
+                    TotalPaid: 4500,
+                    RemainingDue: 0,
+                    AssignedInstructor: "Pooja Sharma (Trainer)",
+                    PaymentMethod: "Cash",
+                    RequestedBy: "Ramesh Kumar (Staff)",
+                    RequestedDate: "25 Aug 2026",
+                    ApprovedBy: "Yuvraj Gupta (Owner)",
+                    ApprovedDate: "25 Aug 2026",
+                    Status: StudentModel_1.StudentRequestStatusEnum.Approved,
+                    Payments: [
+                        {
+                            ReceiptNumber: "REC-2026-062",
+                            Date: "25 Aug 2026",
+                            Method: "Cash",
+                            Amount: 4500,
+                            RecordedBy: "Ramesh Kumar (Staff)"
+                        }
+                    ]
+                }
+            }, { upsert: true, returnDocument: "after", setDefaultsOnInsert: true });
+            // Seed sample pending student request
+            await StudentModel_1.StudentModel.findOneAndUpdate({ PhoneNumber: "9876543299" }, {
+                $set: {
+                    Name: "Rohit Verma",
+                    PhoneNumber: "9876543299",
+                    VehicleType: "4-Wheeler",
+                    CoursePackage: "4-Wheeler Personal (120 km Target)",
+                    TrainingType: "4w_personal",
+                    TargetKm: 120,
+                    CompletedKm: 0,
+                    TotalDays: 15,
+                    CompletedDays: 0,
+                    TotalCourseFee: 8500,
+                    TotalPaid: 5000,
+                    RemainingDue: 3500,
+                    AssignedInstructor: "Ramesh Kumar (Staff)",
+                    PaymentMethod: "UPI",
+                    RequestedBy: "Ramesh Kumar (Staff)",
+                    RequestedDate: "06 Sep 2026",
+                    Status: StudentModel_1.StudentRequestStatusEnum.Pending,
+                    Payments: [
+                        {
+                            ReceiptNumber: "REC-2026-112",
+                            Date: "06 Sep 2026",
+                            Method: "UPI",
+                            Amount: 5000,
+                            RecordedBy: "Ramesh Kumar (Staff)"
+                        }
+                    ]
+                }
+            }, { upsert: true, returnDocument: "after", setDefaultsOnInsert: true });
             console.log("=======================================================");
             console.log("  Database seeding completed successfully!             ");
             console.log("=======================================================\n");

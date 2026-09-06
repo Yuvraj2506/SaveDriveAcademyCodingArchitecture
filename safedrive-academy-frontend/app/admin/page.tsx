@@ -3,13 +3,14 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { CleanStudentData, CleanPendingRequest, CleanPaymentRecord } from "@/types";
-import { apiClient } from "@/lib/apiClient";
+import { apiClient, AUTH_KEYS } from "@/lib/apiClient";
+import AuthGuard from "@/components/AuthGuard";
 import NewStudentModal from "@/components/NewStudentModal";
 import NewPaymentModal from "@/components/NewPaymentModal";
 import ReceiptModal from "@/components/ReceiptModal";
 import Footer from "@/components/Footer";
 
-export default function AdminDashboardPage() {
+function AdminDashboardContent() {
   const router = useRouter();
   const [adminRole, setAdminRole] = useState<"admin_staff" | "admin_owner">("admin_staff");
   const [adminName, setAdminName] = useState("Rajesh Kumar (Staff)");
@@ -69,7 +70,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const storedUserStr = localStorage.getItem("safedrive_user");
+      const storedUserStr = localStorage.getItem(AUTH_KEYS.USER) || localStorage.getItem("safedrive_user");
       if (storedUserStr) {
         try {
           const storedUser = JSON.parse(storedUserStr);
@@ -102,11 +103,8 @@ export default function AdminDashboardPage() {
     }
   }, [selectedStudent]);
 
-  const handleSignOut = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("safedrive_auth_token");
-      localStorage.removeItem("safedrive_user");
-    }
+  const handleSignOut = async () => {
+    await apiClient.logout();
     router.push("/");
   };
 
@@ -186,41 +184,31 @@ export default function AdminDashboardPage() {
   };
 
   // Owner Action: Approve Request -> updates database & refetches
-  const handleApproveRequest = async (requestId: string) => {
+  const handleApproveRequest = async (idOrPhone: string) => {
     try {
-      const res = await fetch(`/api/requests/${requestId}/approve`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (data.success) {
-        const msg =
-          data.type === "new_payment"
-            ? "Payment approved and credited to student ledger!"
-            : "Student registration approved and added to active roster!";
-        setActionMessage(msg);
-        setTimeout(() => setActionMessage(null), 3500);
-        await loadData();
-        setActiveTab("students");
-      }
-    } catch (err) {
+      await apiClient.approveOwnerStudentRequest(idOrPhone);
+      setActionMessage("Student registration approved! Student can now activate their account.");
+      setTimeout(() => setActionMessage(null), 3500);
+      await loadData();
+      setActiveTab("students");
+    } catch (err: any) {
       console.error("Error approving request:", err);
+      setActionMessage(err.message || "Failed to approve request.");
+      setTimeout(() => setActionMessage(null), 3500);
     }
   };
 
   // Owner Action: Reject Request
-  const handleRejectRequest = async (requestId: string) => {
+  const handleRejectRequest = async (idOrPhone: string) => {
     try {
-      const res = await fetch(`/api/requests/${requestId}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (data.success) {
-        setPendingRequests((prev) => prev.filter((r) => r.requestId !== requestId));
-        setActionMessage(`Request rejected and removed.`);
-        setTimeout(() => setActionMessage(null), 3000);
-      }
-    } catch (err) {
+      await apiClient.rejectOwnerStudentRequest(idOrPhone, "Declined by owner");
+      setActionMessage("Request rejected and marked.");
+      setTimeout(() => setActionMessage(null), 3000);
+      await loadData();
+    } catch (err: any) {
       console.error("Error rejecting request:", err);
+      setActionMessage(err.message || "Failed to reject request.");
+      setTimeout(() => setActionMessage(null), 3500);
     }
   };
 
@@ -518,21 +506,21 @@ export default function AdminDashboardPage() {
                           {isOwner ? (
                             <>
                               <button
-                                onClick={() => handleApproveRequest(req.requestId)}
+                                onClick={() => handleApproveRequest(req.id || req.phone)}
                                 className="px-4 py-2 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-colors cursor-pointer shadow-none"
                               >
                                 {req.type === "new_payment" ? "Approve Payment ✓" : "Approve Student ✓"}
                               </button>
                               <button
-                                onClick={() => handleRejectRequest(req.requestId)}
-                                className="px-3 py-2 rounded-full bg-white hover:bg-[#e0e0e0] text-[#141414] text-[12px] font-semibold border border-[#e0e0e0] transition-colors cursor-pointer"
+                                onClick={() => handleRejectRequest(req.id || req.phone)}
+                                className="px-3 py-2 rounded-full bg-white hover:bg-rose-50 text-rose-700 text-[12px] font-semibold border border-rose-200 transition-colors cursor-pointer"
                               >
                                 Reject
                               </button>
                             </>
                           ) : (
-                            <span className="px-3 py-1.5 rounded-full bg-white text-[#707070] text-[11px] font-medium border border-[#e0e0e0]">
-                              Waiting for Owner Approval
+                            <span className="px-3 py-1.5 rounded-full bg-amber-50 text-amber-800 text-[11px] font-semibold border border-amber-200">
+                              Awaiting Owner Decision
                             </span>
                           )}
                         </div>
@@ -981,5 +969,13 @@ export default function AdminDashboardPage() {
         onClose={() => setReceiptModalData(null)}
       />
     </div>
+  );
+}
+
+export default function AdminDashboardPage() {
+  return (
+    <AuthGuard allowedRoles={["admin_staff", "admin_owner"]}>
+      <AdminDashboardContent />
+    </AuthGuard>
   );
 }

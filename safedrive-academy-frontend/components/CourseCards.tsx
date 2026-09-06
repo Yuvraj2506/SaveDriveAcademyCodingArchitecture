@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export const OFFICE_PHONE_NUMBER = "+91 98765 43210";
+export const OFFICE_PHONE_NUMBER = "+91 98756 60105";
 export const OFFICE_TEL_LINK = "tel:+919876543210";
 
 export default function CourseCards() {

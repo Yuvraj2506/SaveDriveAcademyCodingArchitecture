@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "./ToastContext";
-import { apiClient } from "@/lib/apiClient";
+import { apiClient, setTokens, AUTH_KEYS } from "@/lib/apiClient";
 
 export type AuthRole = "student" | "admin_staff" | "admin_owner" | "user";
 
@@ -39,7 +40,16 @@ export default function AuthModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   const handleDemoFill = (type: "user_4w" | "user_2w" | "staff" | "owner") => {
     setErrorMessage(null);
@@ -91,8 +101,8 @@ export default function AuthModal({
       const data = await apiClient.login(cleanIdentifier, password);
 
       if (typeof window !== "undefined") {
-        localStorage.setItem("safedrive_auth_token", data.Token);
-        localStorage.setItem("safedrive_user", JSON.stringify(data.User));
+        setTokens(data.Token, data.RefreshToken);
+        localStorage.setItem(AUTH_KEYS.USER, JSON.stringify(data.User));
       }
 
       setSuccessMessage(`Welcome back, ${data.User.FullName}!`);
@@ -119,29 +129,15 @@ export default function AuthModal({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/verify-phone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: setupPhone.trim() }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        const msg = data.message || "Mobile number not registered in approved students.";
-        setErrorMessage(msg);
-        showToast(msg, "error", "Verification Failed");
-        setLoading(false);
-        return;
-      }
-
-      setVerifiedName(data.studentName || "Student");
+      const data = await apiClient.verifyStudentPhone(setupPhone.trim());
+      setVerifiedName(data.FullName || "Student");
       setSetupStep("set_password");
       showToast("Mobile number verified! Please create your password.", "info", "Phone Verified");
       setLoading(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Verification failed";
       setErrorMessage(msg);
-      showToast(msg, "error", "Network Error");
+      showToast(msg, "error", "Verification Failed");
       setLoading(false);
     }
   };
@@ -168,24 +164,11 @@ export default function AuthModal({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/set-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: setupPhone.trim(), password: newPassword }),
-      });
+      const data = await apiClient.setStudentPassword(setupPhone.trim(), newPassword);
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        const msg = data.message || "Failed to set password.";
-        setErrorMessage(msg);
-        showToast(msg, "error", "Activation Failed");
-        setLoading(false);
-        return;
-      }
-
-      if (typeof window !== "undefined" && data.session?.token) {
-        localStorage.setItem("safedrive_auth_token", data.session.token);
-        localStorage.setItem("safedrive_user", JSON.stringify(data.user));
+      if (typeof window !== "undefined" && data.Token) {
+        setTokens(data.Token, data.RefreshToken);
+        localStorage.setItem(AUTH_KEYS.USER, JSON.stringify(data.User));
       }
 
       setSuccessMessage("Password set successfully! Logging in to your dashboard...");
@@ -194,24 +177,44 @@ export default function AuthModal({
       setTimeout(() => {
         setLoading(false);
         setSuccessMessage(null);
-        onLoginSuccess("student", setupPhone.trim(), verifiedName || "Student");
+        onLoginSuccess("student", setupPhone.trim(), verifiedName || data.User?.FullName || "Student");
         onClose();
       }, 900);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to set password";
       setErrorMessage(msg);
-      showToast(msg, "error", "Network Error");
+      showToast(msg, "error", "Activation Failed");
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div
-        className="relative w-full max-w-md bg-white border border-[#f0f0f0] rounded-[24px] p-6 sm:p-8 shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="auth-modal-backdrop"
+          initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+          animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
+          exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              onClose();
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+        >
+          <motion.div
+            key="auth-modal-card"
+            layout
+            initial={{ y: "100vh" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100vh" }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            className="relative w-full max-w-md bg-white border border-[#f0f0f0] rounded-[24px] p-6 sm:p-8 shadow-2xl overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+          >
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -535,7 +538,9 @@ export default function AuthModal({
             </div>
           </div>
         )}
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

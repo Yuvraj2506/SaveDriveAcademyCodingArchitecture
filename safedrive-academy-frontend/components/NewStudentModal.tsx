@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { CleanPendingRequest, PaymentMethod, TrainingType } from "@/types";
+import { apiClient } from "@/lib/apiClient";
 
 interface NewStudentModalProps {
   isOpen: boolean;
@@ -132,27 +133,13 @@ export default function NewStudentModal({
     };
 
     try {
-      const res = await fetch("/api/requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newRequest),
+      const created = await apiClient.createStaffStudentRequest(newRequest);
+      setSubmittedInfo({
+        name: newRequest.name,
+        phone: newRequest.phone,
+        packageLabel: fullPackageName,
       });
-      const data = await res.json();
-      if (data.success && data.request) {
-        setSubmittedInfo({
-          name: newRequest.name,
-          phone: newRequest.phone,
-          packageLabel: fullPackageName,
-        });
-        onRequestSubmitted(data.request);
-      } else {
-        setSubmittedInfo({
-          name: newRequest.name,
-          phone: newRequest.phone,
-          packageLabel: fullPackageName,
-        });
-        onRequestSubmitted(newRequest);
-      }
+      onRequestSubmitted(created);
     } catch {
       setSubmittedInfo({
         name: newRequest.name,

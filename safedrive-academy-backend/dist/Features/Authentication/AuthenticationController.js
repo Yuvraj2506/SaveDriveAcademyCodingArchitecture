@@ -26,6 +26,10 @@ class AuthenticationController {
     }
     RegisterRoutes() {
         this._router.post(ApplicationRouteFactory_1.ApplicationRouteFactory.AuthenticationRoutes.Login, this.Login.bind(this));
+        this._router.post(ApplicationRouteFactory_1.ApplicationRouteFactory.AuthenticationRoutes.RefreshToken, this.RefreshToken.bind(this));
+        this._router.post(ApplicationRouteFactory_1.ApplicationRouteFactory.AuthenticationRoutes.Logout, this.Logout.bind(this));
+        this._router.post(ApplicationRouteFactory_1.ApplicationRouteFactory.AuthenticationRoutes.VerifyPhone, this.VerifyPhone.bind(this));
+        this._router.post(ApplicationRouteFactory_1.ApplicationRouteFactory.AuthenticationRoutes.SetPassword, this.SetPassword.bind(this));
     }
     async Login(req, res) {
         try {
@@ -38,35 +42,90 @@ class AuthenticationController {
                 .json(ApiResponseClass_1.ApiResponseClass.Succeeded(response, AuthenticationConstant_1.AuthenticationConstant.LOGIN_SUCCESS, 200));
         }
         catch (error) {
-            if (error instanceof ValidationCException_1.ValidationCException) {
-                res
-                    .status(error.StatusCode)
-                    .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
-                return;
-            }
-            if (error instanceof UnauthorizedCException_1.UnauthorizedCException) {
-                res
-                    .status(error.StatusCode)
-                    .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
-                return;
-            }
-            if (error instanceof NotFoundCException_1.NotFoundCException) {
-                res
-                    .status(error.StatusCode)
-                    .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
-                return;
-            }
-            if (error instanceof BaseCException_1.BaseCException) {
-                res
-                    .status(error.StatusCode)
-                    .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
-                return;
-            }
-            console.error("[AuthenticationController] Unexpected error in Login:", error);
-            res
-                .status(500)
-                .json(ApiResponseClass_1.ApiResponseClass.Failed("An unexpected error occurred while processing the login request.", [error?.message || "Internal server error."], 500));
+            this.HandleError(res, error, "Login");
         }
+    }
+    async RefreshToken(req, res) {
+        try {
+            const request = req.body;
+            AuthenticationAssertion_1.AuthenticationAssertion.Current.AssertRefreshTokenRequest(request);
+            const response = await AuthenticationService_1.AuthenticationService.Current.RefreshTokenAsync(request);
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(response, AuthenticationConstant_1.AuthenticationConstant.REFRESH_SUCCESS, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "RefreshToken");
+        }
+    }
+    async Logout(req, res) {
+        try {
+            const request = req.body || {};
+            const authHeader = req.headers.authorization;
+            await AuthenticationService_1.AuthenticationService.Current.LogoutAsync(request.RefreshToken, authHeader);
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(null, AuthenticationConstant_1.AuthenticationConstant.LOGOUT_SUCCESS, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "Logout");
+        }
+    }
+    async VerifyPhone(req, res) {
+        try {
+            const request = req.body;
+            AuthenticationAssertion_1.AuthenticationAssertion.Current.AssertVerifyPhoneRequest(request);
+            const response = await AuthenticationService_1.AuthenticationService.Current.VerifyPhoneAsync(request);
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(response, AuthenticationConstant_1.AuthenticationConstant.PHONE_VERIFIED_SUCCESS, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "VerifyPhone");
+        }
+    }
+    async SetPassword(req, res) {
+        try {
+            const request = req.body;
+            AuthenticationAssertion_1.AuthenticationAssertion.Current.AssertSetPasswordRequest(request);
+            const response = await AuthenticationService_1.AuthenticationService.Current.SetPasswordAsync(request);
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(response, AuthenticationConstant_1.AuthenticationConstant.ACCOUNT_ACTIVATED_SUCCESS, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "SetPassword");
+        }
+    }
+    HandleError(res, error, contextName) {
+        if (error instanceof ValidationCException_1.ValidationCException) {
+            res
+                .status(error.StatusCode)
+                .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
+            return;
+        }
+        if (error instanceof UnauthorizedCException_1.UnauthorizedCException) {
+            res
+                .status(error.StatusCode)
+                .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
+            return;
+        }
+        if (error instanceof NotFoundCException_1.NotFoundCException) {
+            res
+                .status(error.StatusCode)
+                .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
+            return;
+        }
+        if (error instanceof BaseCException_1.BaseCException) {
+            res
+                .status(error.StatusCode)
+                .json(ApiResponseClass_1.ApiResponseClass.Failed(error.message, error.ValidationErrors, error.StatusCode));
+            return;
+        }
+        console.error(`[AuthenticationController] Unexpected error in ${contextName}:`, error);
+        res
+            .status(500)
+            .json(ApiResponseClass_1.ApiResponseClass.Failed(`An unexpected error occurred while processing the ${contextName} request.`, [error?.message || "Internal server error."], 500));
     }
 }
 exports.AuthenticationController = AuthenticationController;

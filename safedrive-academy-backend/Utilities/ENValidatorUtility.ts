@@ -75,5 +75,17 @@ export class ENValidatorUtility {
   public get JwtExpiresIn(): string {
     return this.GetString("JWT_EXPIRES_IN", false, "7d");
   }
+
+  public get JwtAccessExpiresIn(): string {
+    return this.GetString("JWT_ACCESS_EXPIRES_IN", false, "15m");
+  }
+
+  public get JwtRefreshSecret(): string {
+    return this.GetString("JWT_REFRESH_SECRET", false, this.JwtSecret);
+  }
+
+  public get JwtRefreshExpiresIn(): string {
+    return this.GetString("JWT_REFRESH_EXPIRES_IN", false, "7d");
+  }
 }
 
