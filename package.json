@@ -1,0 +1,18 @@
+{
+  "name": "safedrive-academy-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "safedrive-academy-backend",
+    "safedrive-academy-frontend"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4"
+  }
+}
