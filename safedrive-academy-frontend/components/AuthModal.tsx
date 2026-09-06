@@ -1,11 +1,30 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "./ToastContext";
 import { apiClient, setTokens, AUTH_KEYS } from "@/lib/apiClient";
 
 export type AuthRole = "student" | "admin_staff" | "admin_owner" | "user";
+
+interface AdminRoleOption {
+  id: "staff" | "owner";
+  label: string;
+  description: string;
+}
+
+const ADMIN_ROLE_OPTIONS: AdminRoleOption[] = [
+  {
+    id: "staff",
+    label: "Staff / Instructor",
+    description: "Manage student requests, track km/days, record fees",
+  },
+  {
+    id: "owner",
+    label: "Academy Owner",
+    description: "Approve/reject admissions, audit ledgers, full controls",
+  },
+];
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -25,6 +44,13 @@ export default function AuthModal({
   const [adminSubRole, setAdminSubRole] = useState<"staff" | "owner">("staff");
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
 
+  // Custom accessible role dropdown state
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [highlightedRoleIndex, setHighlightedRoleIndex] = useState<number>(0);
+  const roleDropdownRef = useRef<HTMLDivElement>(null);
+  const roleTriggerRef = useRef<HTMLButtonElement>(null);
+  const roleListboxRef = useRef<HTMLUListElement>(null);
+
   // Login form state
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -40,39 +66,82 @@ export default function AuthModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Sync highlighted option index when adminSubRole changes
+  useEffect(() => {
+    const idx = ADMIN_ROLE_OPTIONS.findIndex((o) => o.id === adminSubRole);
+    if (idx !== -1) setHighlightedRoleIndex(idx);
+  }, [adminSubRole]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!isRoleDropdownOpen) return;
+
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(e.target as Node)) {
+        setIsRoleDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isRoleDropdownOpen]);
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (isRoleDropdownOpen) {
+          setIsRoleDropdownOpen(false);
+          e.stopPropagation();
+          return;
+        }
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isRoleDropdownOpen]);
 
-  const handleDemoFill = (type: "user_4w" | "user_2w" | "staff" | "owner") => {
-    setErrorMessage(null);
-    setIsFirstTimeSetup(false);
-    if (type === "user_4w") {
-      setMainTab("user");
-      setIdentifier("9876543212");
-      setPassword("StudentPass@123");
-    } else if (type === "user_2w") {
-      setMainTab("user");
-      setIdentifier("9876543213");
-      setPassword("StudentPass@123");
-    } else if (type === "staff") {
-      setMainTab("admin");
-      setAdminSubRole("staff");
-      setIdentifier("9876543211");
-      setPassword("StaffPass@123");
-    } else {
-      setMainTab("admin");
-      setAdminSubRole("owner");
-      setIdentifier("9876543210");
-      setPassword("OwnerPass@123");
+  // Handle keyboard navigation for role dropdown
+  const handleRoleTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setIsRoleDropdownOpen(true);
+      const nextIdx =
+        e.key === "ArrowDown"
+          ? (highlightedRoleIndex + 1) % ADMIN_ROLE_OPTIONS.length
+          : (highlightedRoleIndex - 1 + ADMIN_ROLE_OPTIONS.length) % ADMIN_ROLE_OPTIONS.length;
+      setHighlightedRoleIndex(nextIdx);
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (isRoleDropdownOpen) {
+        setAdminSubRole(ADMIN_ROLE_OPTIONS[highlightedRoleIndex].id);
+        setIsRoleDropdownOpen(false);
+        setErrorMessage(null);
+      } else {
+        setIsRoleDropdownOpen(true);
+      }
+    } else if (e.key === "Escape") {
+      if (isRoleDropdownOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsRoleDropdownOpen(false);
+      }
+    } else if (e.key === "Tab") {
+      setIsRoleDropdownOpen(false);
     }
+  };
+
+  const handleSelectRole = (roleId: "staff" | "owner") => {
+    setAdminSubRole(roleId);
+    setIsRoleDropdownOpen(false);
+    setErrorMessage(null);
+    roleTriggerRef.current?.focus();
   };
 
   // 1. Regular Login Submission via Express Backend
@@ -214,149 +283,267 @@ export default function AuthModal({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          key="auth-modal-backdrop"
-          initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
-          animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
-          exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
-          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              onClose();
-            }
-          }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          key="auth-modal-overlay"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 1 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden"
         >
+          {/* Backdrop (Fades smoothly in background while modal card slides) */}
+          <motion.div
+            key="auth-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35, ease: "easeInOut" }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                onClose();
+              }
+            }}
+            className="absolute inset-0 bg-black/50 backdrop-blur-md"
+            aria-hidden="true"
+          />
+
+          {/* Modal Card - Pure Slide-In and Pure Slide-Out (Zero Fading, Opacity 1) */}
           <motion.div
             key="auth-modal-card"
-            layout
             initial={{ y: "100vh" }}
             animate={{ y: 0 }}
-            exit={{ y: "100vh" }}
+            exit={{
+              y: "100vh",
+              transition: { duration: 0.38, ease: [0.32, 0, 0.67, 0] },
+            }}
             transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full max-w-md bg-white border border-[#f0f0f0] rounded-[24px] p-6 sm:p-8 shadow-2xl overflow-hidden"
+            className="relative w-full max-w-md bg-white border border-[#f0f0f0] rounded-[24px] p-6 sm:p-8 shadow-2xl z-10"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="auth-modal-title"
           >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 w-9 h-9 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[#141414] flex items-center justify-center transition-colors cursor-pointer"
-          aria-label="Close modal"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-
-        {/* Modal Header */}
-        <div className="text-center space-y-1.5 pb-4">
-          <div className="w-9 h-9 squircle-icon bg-[#141414] text-white flex items-center justify-center mx-auto mb-2 text-sm font-bold">
-            S
-          </div>
-          <h2 className="text-[20px] font-semibold text-[#141414] tracking-tight">
-            {isFirstTimeSetup ? "Student Password Setup." : "Sign In to SafeDrive."}
-          </h2>
-          <p className="text-[13px] text-[#707070]">
-            {isFirstTimeSetup
-              ? "Verify your registered 10-digit mobile number to create your password."
-              : "Access your driving training records and fees ledger."}
-          </p>
-        </div>
-
-        {/* Mode Switcher */}
-        {!isFirstTimeSetup && (
-          <div className="grid grid-cols-2 p-1 rounded-full bg-[#f3f3f3] gap-1 mb-4">
+            {/* Close Button */}
             <button
-              type="button"
-              onClick={() => {
-                setMainTab("user");
-                setErrorMessage(null);
-              }}
-              className={`py-1.5 text-[13px] font-semibold rounded-full transition-all cursor-pointer ${
-                mainTab === "user" ? "bg-[#ffffff] text-[#141414] shadow-sm" : "text-[#707070] hover:text-[#141414]"
-              }`}
+              onClick={onClose}
+              className="absolute top-5 right-5 w-9 h-9 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[#141414] flex items-center justify-center transition-colors cursor-pointer"
+              aria-label="Close modal"
             >
-              Student (User)
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMainTab("admin");
-                setErrorMessage(null);
-              }}
-              className={`py-1.5 text-[13px] font-semibold rounded-full transition-all cursor-pointer ${
-                mainTab === "admin" ? "bg-[#ffffff] text-[#141414] shadow-sm" : "text-[#707070] hover:text-[#141414]"
-              }`}
-            >
-              Admin Portal
-            </button>
-          </div>
-        )}
 
-        {/* Admin Sub-Role Selector */}
-        {!isFirstTimeSetup && mainTab === "admin" && (
-          <div className="flex items-center justify-between bg-[#f3f3f3]/80 p-1.5 rounded-full mb-4 px-3 text-[12px]">
-            <span className="font-semibold text-[#707070]">Admin Role:</span>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setAdminSubRole("staff");
-                  setErrorMessage(null);
-                }}
-                className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
-                  adminSubRole === "staff" ? "bg-[#141414] text-white" : "text-[#707070] hover:text-[#141414]"
-                }`}
-              >
-                Staff / Instructor
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAdminSubRole("owner");
-                  setErrorMessage(null);
-                }}
-                className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
-                  adminSubRole === "owner" ? "bg-[#141414] text-white" : "text-[#707070] hover:text-[#141414]"
-                }`}
-              >
-                Academy Owner
-              </button>
+            {/* Modal Header */}
+            <div className="text-center space-y-1.5 pb-4">
+              <div className="w-9 h-9 squircle-icon bg-[#141414] text-white flex items-center justify-center mx-auto mb-2 text-sm font-bold">
+                S
+              </div>
+              <h2 id="auth-modal-title" className="text-[20px] font-semibold text-[#141414] tracking-tight">
+                {isFirstTimeSetup ? "Student Password Setup." : "Sign In to SafeDrive."}
+              </h2>
+              <p className="text-[13px] text-[#707070]">
+                {isFirstTimeSetup
+                  ? "Verify your registered 10-digit mobile number to create your password."
+                  : "Access your driving training records and fees ledger."}
+              </p>
             </div>
-          </div>
-        )}
 
-        {/* Error Alert Box */}
-        {errorMessage && (
-          <div className="mb-3.5 p-3 rounded-[16px] bg-red-50 border border-red-200 text-red-700 text-[12px] space-y-2">
-            <div className="flex items-start gap-2">
-              <span className="font-bold shrink-0">!</span>
-              <span className="flex-1">{errorMessage}</span>
-            </div>
-            {(() => {
-              const suggested = getSuggestedRoleSwitch(errorMessage);
-              if (!suggested) return null;
-              return (
-                <div className="pt-0.5 pl-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMainTab(suggested.tab);
-                      if (suggested.subRole) {
-                        setAdminSubRole(suggested.subRole);
-                      }
-                      setErrorMessage(null);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-700 hover:bg-red-800 text-white rounded-full font-semibold text-[11px] transition-all cursor-pointer shadow-sm"
+            {/* Mode Switcher */}
+            {!isFirstTimeSetup && (
+              <div className="grid grid-cols-2 p-1 rounded-full bg-[#f3f3f3] gap-1 mb-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMainTab("user");
+                    setIsRoleDropdownOpen(false);
+                    setErrorMessage(null);
+                  }}
+                  className={`py-1.5 text-[13px] font-semibold rounded-full transition-all cursor-pointer ${
+                    mainTab === "user" ? "bg-[#ffffff] text-[#141414] shadow-sm" : "text-[#707070] hover:text-[#141414]"
+                  }`}
+                >
+                  Student (User)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMainTab("admin");
+                    setIsRoleDropdownOpen(false);
+                    setErrorMessage(null);
+                  }}
+                  className={`py-1.5 text-[13px] font-semibold rounded-full transition-all cursor-pointer ${
+                    mainTab === "admin" ? "bg-[#ffffff] text-[#141414] shadow-sm" : "text-[#707070] hover:text-[#141414]"
+                  }`}
+                >
+                  Admin Portal
+                </button>
+              </div>
+            )}
+
+            {/* Custom Accessible Admin Role Selector (Zero Layout Shift Floating Dropdown) */}
+            {!isFirstTimeSetup && mainTab === "admin" && (
+              <div ref={roleDropdownRef} className="relative w-full mb-4">
+                <label
+                  id="admin-role-dropdown-label"
+                  className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1.5"
+                >
+                  Select Admin Role *
+                </label>
+                <button
+                  ref={roleTriggerRef}
+                  type="button"
+                  role="combobox"
+                  id="admin-role-combobox"
+                  aria-expanded={isRoleDropdownOpen}
+                  aria-haspopup="listbox"
+                  aria-controls="admin-role-listbox"
+                  aria-labelledby="admin-role-dropdown-label admin-role-combobox"
+                  aria-activedescendant={`role-option-${adminSubRole}`}
+                  onClick={() => {
+                    setIsRoleDropdownOpen((prev) => !prev);
+                    setErrorMessage(null);
+                  }}
+                  onKeyDown={handleRoleTriggerKeyDown}
+                  className={`w-full flex items-center justify-between p-2.5 sm:p-3 rounded-[18px] border transition-all text-left cursor-pointer outline-none ${
+                    isRoleDropdownOpen
+                      ? "bg-[#ffffff] border-[#141414] shadow-md ring-2 ring-[#141414]/10"
+                      : "bg-[#f8f8f8] border-[#e8e8e8] hover:border-[#141414]/30 hover:bg-[#f3f3f3]"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-white border border-[#e5e5e5] flex items-center justify-center shrink-0 shadow-xs">
+                      {adminSubRole === "staff" ? (
+                        <svg className="w-4 h-4 text-[#141414]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-[#141414]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="block text-[13px] font-bold text-[#141414] truncate">
+                        {ADMIN_ROLE_OPTIONS.find((o) => o.id === adminSubRole)?.label}
+                      </span>
+                      <p className="text-[11px] text-[#707070] truncate">
+                        {ADMIN_ROLE_OPTIONS.find((o) => o.id === adminSubRole)?.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <motion.svg
+                    animate={{ rotate: isRoleDropdownOpen ? 180 : 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="w-4 h-4 text-[#707070] shrink-0 ml-2"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
                   >
-                    <span>{suggested.label}</span>
-                    <span>→</span>
-                  </button>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </motion.svg>
+                </button>
+
+                {/* Dropdown Menu - Floating Absolute Overlay (0 Layout Shift) */}
+                <AnimatePresence>
+                  {isRoleDropdownOpen && (
+                    <motion.ul
+                      ref={roleListboxRef}
+                      id="admin-role-listbox"
+                      role="listbox"
+                      aria-labelledby="admin-role-dropdown-label"
+                      tabIndex={-1}
+                      initial={{ opacity: 0, scale: 0.97, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.97, y: -4 }}
+                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-white border border-[#e5e5e5] rounded-[20px] p-1.5 shadow-2xl space-y-1 focus:outline-none"
+                    >
+                      {ADMIN_ROLE_OPTIONS.map((opt, idx) => {
+                        const isSelected = adminSubRole === opt.id;
+                        const isHighlighted = highlightedRoleIndex === idx;
+                        return (
+                          <li
+                            key={opt.id}
+                            id={`role-option-${opt.id}`}
+                            role="option"
+                            aria-selected={isSelected}
+                            onClick={() => handleSelectRole(opt.id)}
+                            onMouseEnter={() => setHighlightedRoleIndex(idx)}
+                            className={`flex items-center justify-between p-2.5 rounded-[14px] cursor-pointer transition-colors ${
+                              isHighlighted ? "bg-[#f3f3f3]" : "hover:bg-[#f8f8f8]"
+                            } ${isSelected ? "font-semibold" : ""}`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                                  isSelected ? "bg-[#141414] text-white" : "bg-[#f0f0f0] text-[#707070]"
+                                }`}
+                              >
+                                {opt.id === "staff" ? (
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <span className={`block text-[13px] ${isSelected ? "text-[#141414] font-bold" : "text-[#333333]"}`}>
+                                  {opt.label}
+                                </span>
+                                <p className="text-[11px] text-[#707070] truncate">
+                                  {opt.description}
+                                </p>
+                              </div>
+                            </div>
+
+                            {isSelected && (
+                              <svg className="w-4 h-4 text-[#141414] shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </motion.ul>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Error Alert Box */}
+            {errorMessage && (
+              <div className="mb-3.5 p-3 rounded-[16px] bg-red-50 border border-red-200 text-red-700 text-[12px] space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="font-bold shrink-0">!</span>
+                  <span className="flex-1">{errorMessage}</span>
                 </div>
-              );
-            })()}
-          </div>
-        )}
+                {(() => {
+                  const suggested = getSuggestedRoleSwitch(errorMessage);
+                  if (!suggested) return null;
+                  return (
+                    <div className="pt-0.5 pl-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMainTab(suggested.tab);
+                          if (suggested.subRole) {
+                            setAdminSubRole(suggested.subRole);
+                          }
+                          setIsRoleDropdownOpen(false);
+                          setErrorMessage(null);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-700 hover:bg-red-800 text-white rounded-full font-semibold text-[11px] transition-all cursor-pointer shadow-sm"
+                      >
+                        <span>{suggested.label}</span>
+                        <span>→</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
         {/* Success Alert */}
         {successMessage ? (
@@ -554,45 +741,6 @@ export default function AuthModal({
               </div>
             )}
           </form>
-        )}
-
-        {/* 1-Click Demo Fill */}
-        {!isFirstTimeSetup && (
-          <div className="mt-5 pt-3.5 border-t border-[#f0f0f0] text-center">
-            <span className="text-[11px] font-semibold text-[#707070] block mb-2">
-              1-Click Demo Credentials:
-            </span>
-            <div className="flex flex-wrap justify-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleDemoFill("user_4w")}
-                className="px-2.5 py-1 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[11px] font-medium text-[#141414] cursor-pointer"
-              >
-                Student (4W)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoFill("user_2w")}
-                className="px-2.5 py-1 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[11px] font-medium text-[#141414] cursor-pointer"
-              >
-                Student (2W)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoFill("staff")}
-                className="px-2.5 py-1 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[11px] font-medium text-[#141414] cursor-pointer"
-              >
-                Staff Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoFill("owner")}
-                className="px-2.5 py-1 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[11px] font-medium text-[#141414] cursor-pointer"
-              >
-                Academy Owner
-              </button>
-            </div>
-          </div>
         )}
           </motion.div>
         </motion.div>
