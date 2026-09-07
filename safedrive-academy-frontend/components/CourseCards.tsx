@@ -1,6 +1,34 @@
 "use client";
 
 import React from "react";
+import dynamic from "next/dynamic";
+
+// Dynamically import Three.js canvases to avoid SSR hydration issues
+const CarModelCanvas = dynamic(
+  () => import("./CarModelCanvas"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[220px] flex flex-col items-center justify-center animate-pulse">
+        <div className="w-6 h-6 rounded-full border-2 border-[#141414]/20 border-t-[#141414] animate-spin mb-1.5" />
+        <span className="text-[10px] font-medium text-[#707070]">Loading Car View...</span>
+      </div>
+    ),
+  }
+);
+
+const BikeModelCanvas = dynamic(
+  () => import("./BikeModelCanvas"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[220px] flex flex-col items-center justify-center animate-pulse">
+        <div className="w-6 h-6 rounded-full border-2 border-[#141414]/20 border-t-[#141414] animate-spin mb-1.5" />
+        <span className="text-[10px] font-medium text-[#707070]">Loading Bike View...</span>
+      </div>
+    ),
+  }
+);
 
 export const OFFICE_PHONE_NUMBER = "+91 98756 60105";
 export const OFFICE_TEL_LINK = "tel:+919876543210";
@@ -60,23 +88,34 @@ export default function CourseCards() {
           </p>
         </div>
 
-        {/* 2 Minimal Course Cards */}
+        {/* 2 Minimal Course Cards with Matching Low-Poly 3D Models */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {courses.map((c) => (
             <div
               key={c.id}
-              className="bg-[#f3f3f3] rounded-[24px] p-7 flex flex-col justify-between transition-all hover:bg-[#e0e0e0]/40"
+              className="bg-[#f3f3f3] rounded-[24px] p-6 sm:p-7 flex flex-col justify-between transition-all hover:bg-[#e0e0e0]/40 shadow-xs border border-[#eaeaea]"
             >
-              <div className="space-y-4">
+              <div className="space-y-3">
+                {/* Header: Icon & Badge */}
                 <div className="flex items-center justify-between">
                   <div className="w-11 h-11 squircle-icon bg-[#141414] text-white flex items-center justify-center">
                     {c.icon}
                   </div>
-                  <span className="px-3 py-1 rounded-full bg-white text-[#141414] text-[11px] font-semibold">
+                  <span className="px-3 py-1 rounded-full bg-white text-[#141414] text-[11px] font-semibold shadow-2xs border border-[#e5e5e5]">
                     {c.badge}
                   </span>
                 </div>
 
+                {/* 3D Model Viewport */}
+                <div className="w-full my-1">
+                  {c.id === "4-wheeler" ? (
+                    <CarModelCanvas />
+                  ) : (
+                    <BikeModelCanvas />
+                  )}
+                </div>
+
+                {/* Course Details */}
                 <div>
                   <h3 className="text-[20px] font-semibold text-[#141414] leading-snug">
                     {c.title}
@@ -86,6 +125,7 @@ export default function CourseCards() {
                   </p>
                 </div>
 
+                {/* Highlights List */}
                 <div className="pt-3 border-t border-[#e0e0e0]/60 space-y-1.5">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-[#707070] block mb-1">
                     Course Highlights:
