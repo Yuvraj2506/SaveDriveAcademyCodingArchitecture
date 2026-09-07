@@ -12,7 +12,7 @@ interface CarViewerProps {
 }
 
 function CarMesh({
-  isMonochrome = true,
+  isMonochrome = false,
   rotationSpeed = 0.45,
 }: {
   isMonochrome?: boolean;
@@ -163,7 +163,7 @@ function CanvasFallback() {
 }
 
 export default function CarModelCanvas({
-  isMonochrome = true,
+  isMonochrome = false,
   rotationSpeed = 0.45,
   boundsMargin = 0.94,
 }: CarViewerProps) {
