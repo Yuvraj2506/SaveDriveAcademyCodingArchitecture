@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { CleanStudentData, CleanPendingRequest, CleanPaymentRecord } from "@/types";
 import { apiClient, AUTH_KEYS } from "@/lib/apiClient";
 import AuthGuard from "@/components/AuthGuard";
@@ -9,6 +10,50 @@ import NewStudentModal from "@/components/NewStudentModal";
 import NewPaymentModal from "@/components/NewPaymentModal";
 import ReceiptModal from "@/components/ReceiptModal";
 import Footer from "@/components/Footer";
+
+type TimeFilter = "all" | "30d" | "90d" | "180d" | "365d";
+
+interface TimeFilterOption {
+  id: TimeFilter;
+  label: string;
+  shortLabel: string;
+  days: number | null;
+}
+
+const TIME_FILTER_OPTIONS: TimeFilterOption[] = [
+  { id: "all", label: "All Time", shortLabel: "All Time", days: null },
+  { id: "30d", label: "Last 30 Days", shortLabel: "30 Days", days: 30 },
+  { id: "90d", label: "Last 3 Months", shortLabel: "3 Months", days: 90 },
+  { id: "180d", label: "Last 6 Months", shortLabel: "6 Months", days: 180 },
+  { id: "365d", label: "Last 1 Year", shortLabel: "1 Year", days: 365 },
+];
+
+function parseFlexibleDate(dateStr?: string): Date | null {
+  if (!dateStr || typeof dateStr !== "string") return null;
+  const parsed = new Date(dateStr);
+  if (!isNaN(parsed.getTime())) return parsed;
+  const parts = dateStr.trim().split(/[-/ ]+/);
+  if (parts.length === 3) {
+    const d = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const y = parseInt(parts[2], 10);
+    if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+      const dt = new Date(y, m, d);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+  }
+  return null;
+}
+
+function isDateWithinDays(dateStr: string | undefined, days: number | null): boolean {
+  if (days === null) return true;
+  const date = parseFlexibleDate(dateStr);
+  if (!date) return true;
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays <= days;
+}
 
 function AdminDashboardContent() {
   const router = useRouter();
@@ -31,6 +76,21 @@ function AdminDashboardContent() {
     student: CleanStudentData;
     payment: CleanPaymentRecord;
   } | null>(null);
+
+  // Time filter state for executive cards
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const [isTimeFilterOpen, setIsTimeFilterOpen] = useState(false);
+  const timeFilterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (timeFilterRef.current && !timeFilterRef.current.contains(e.target as Node)) {
+        setIsTimeFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Load students & pending requests from backend database API
   async function loadData() {
@@ -226,6 +286,48 @@ function AdminDashboardContent() {
     );
   });
 
+  // Time-filtered executive metrics for Owner cards
+  const activeTimeFilterOption =
+    TIME_FILTER_OPTIONS.find((o) => o.id === timeFilter) || TIME_FILTER_OPTIONS[0];
+
+  const timeFilteredStudents = useMemo(() => {
+    if (timeFilter === "all" || !activeTimeFilterOption.days) return studentsList;
+    return studentsList.filter((s) => isDateWithinDays(s.registrationDate, activeTimeFilterOption.days));
+  }, [studentsList, timeFilter, activeTimeFilterOption.days]);
+
+  const timeFilteredRevenue = useMemo(() => {
+    if (timeFilter === "all" || !activeTimeFilterOption.days) {
+      return studentsList.reduce((acc, s) => acc + (s.totalPaid || 0), 0);
+    }
+    let paymentSum = 0;
+    let foundPayments = false;
+    studentsList.forEach((s) => {
+      if (s.payments && s.payments.length > 0) {
+        s.payments.forEach((p) => {
+          if (isDateWithinDays(p.date, activeTimeFilterOption.days)) {
+            paymentSum += p.amount || 0;
+            foundPayments = true;
+          }
+        });
+      }
+    });
+    if (!foundPayments) {
+      return timeFilteredStudents.reduce((acc, s) => acc + (s.totalPaid || 0), 0);
+    }
+    return paymentSum;
+  }, [studentsList, timeFilteredStudents, timeFilter, activeTimeFilterOption.days]);
+
+  const timeFilteredPendingDues = useMemo(() => {
+    return timeFilteredStudents.reduce((acc, s) => acc + (s.remainingDue || 0), 0);
+  }, [timeFilteredStudents]);
+
+  const totalExpectedMetrics = timeFilteredRevenue + timeFilteredPendingDues;
+  const metricsCollectionRate =
+    totalExpectedMetrics > 0 ? Math.round((timeFilteredRevenue / totalExpectedMetrics) * 100) : 100;
+  const metricsActiveCount = timeFilteredStudents.filter((s) => s.status === "active").length;
+  const metricsCompletedCount = timeFilteredStudents.filter((s) => s.status === "completed").length;
+  const metricsStudentsWithDues = timeFilteredStudents.filter((s) => (s.remainingDue || 0) > 0).length;
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#ffffff] text-[#141414]">
@@ -248,39 +350,46 @@ function AdminDashboardContent() {
                 S
               </div>
               <span className="text-[17px] font-bold text-[#141414] tracking-tight">
-                SafeDrive Academy.
+                SafeDrive.
               </span>
             </a>
-            <span
-              className={`px-3 py-1 rounded-full text-[11px] font-semibold ${
-                isOwner ? "bg-[#141414] text-white" : "bg-white text-[#141414] border border-[#e0e0e0]"
-              }`}
-            >
-              {isOwner ? "Owner Portal" : "Staff Portal"}
-            </span>
+            {isOwner && (
+              <span className="px-3 py-1 rounded-full text-[11px] font-semibold bg-[#141414] text-white shadow-sm">
+                Owner Portal
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => setNewPaymentModalOpen(true)}
-              className="px-3 sm:px-3.5 h-8 text-[11px] sm:text-[12px] font-semibold text-[#141414] hover:bg-[#e0e0e0] bg-white border border-[#e0e0e0] rounded-full transition-colors cursor-pointer flex items-center gap-1"
+              className="px-3 sm:px-3.5 h-8 text-[11px] sm:text-[12px] font-semibold text-[#141414] bg-white border border-[#e0e0e0] hover:border-[#141414] hover:bg-[#f9f9f9] rounded-full transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
               title="Record installment payment for approval"
             >
-              <span>+ Record Payment</span>
+              <svg className="w-3.5 h-3.5 text-[#505050]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+              </svg>
+              <span className="sm:hidden">Payment</span>
+              <span className="hidden sm:inline">Record Payment</span>
             </button>
 
             <button
               onClick={() => setNewStudentModalOpen(true)}
-              className="px-3 sm:px-4 h-8 text-[11px] sm:text-[12px] font-semibold text-white bg-[#141414] hover:bg-[#262626] rounded-full transition-colors cursor-pointer shadow-none flex items-center gap-1"
+              className="px-3 sm:px-4 h-8 text-[11px] sm:text-[12px] font-semibold text-white bg-[#141414] hover:bg-[#262626] rounded-full transition-all cursor-pointer shadow-sm hover:shadow flex items-center gap-1.5"
             >
-              <span>+ Request New Student</span>
+              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+              <span className="sm:hidden">+ Request</span>
+              <span className="hidden sm:inline">+ Request New Student</span>
             </button>
 
             <button
               onClick={handleSignOut}
-              className="px-3 sm:px-4 h-8 text-[11px] sm:text-[12px] font-semibold text-[#141414] hover:bg-[#e0e0e0] bg-white border border-[#e0e0e0] rounded-full transition-colors cursor-pointer"
+              className="px-2.5 sm:px-3.5 h-8 text-[11px] sm:text-[12px] font-semibold text-[#707070] hover:text-[#141414] hover:bg-[#e8e8e8] rounded-full transition-colors cursor-pointer"
             >
-              Sign Out →
+              <span className="sm:hidden">Exit</span>
+              <span className="hidden sm:inline">Sign Out →</span>
             </button>
           </div>
         </header>
@@ -305,24 +414,231 @@ function AdminDashboardContent() {
             </div>
           )}
 
-          {/* Owner Executive Metrics in Indian Rupees (₹) */}
+          {/* Owner Executive Metrics in Indian Rupees (₹) with Time Filter */}
           {isOwner && (
-            <div className="bg-[#141414] text-white p-6 rounded-[24px] grid grid-cols-3 gap-3 text-center">
-              <div>
-                <span className="text-[11px] text-[#adadad] block uppercase font-medium">Total Enrolled</span>
-                <span className="text-[22px] font-semibold">{studentsList.length} Students</span>
+            <div className="space-y-4">
+              {/* Executive Header Row & Time Filter Dropdown */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <div>
+                  <h2 className="text-[16px] font-bold text-[#141414] tracking-tight">
+                    Executive Performance Overview
+                  </h2>
+                  <p className="text-[12px] text-[#707070] mt-0.5">
+                    Real-time fee collections, outstanding balances, and student roster activity
+                  </p>
+                </div>
+
+                {/* Time Filter Dropdown */}
+                <div className="relative self-start sm:self-auto" ref={timeFilterRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsTimeFilterOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-[#e5e5e5] hover:border-[#141414] text-[#141414] text-[12px] font-semibold transition-all cursor-pointer shadow-sm focus-ring-mobbin"
+                    aria-expanded={isTimeFilterOpen}
+                    aria-haspopup="listbox"
+                  >
+                    <svg className="w-3.5 h-3.5 text-[#707070]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>
+                      Period: <strong className="font-bold text-[#141414]">{activeTimeFilterOption.label}</strong>
+                    </span>
+                    <motion.svg
+                      animate={{ rotate: isTimeFilterOpen ? 180 : 0 }}
+                      transition={{ duration: 0.18 }}
+                      className="w-3.5 h-3.5 text-[#707070]"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </motion.svg>
+                  </button>
+
+                  <AnimatePresence>
+                    {isTimeFilterOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="absolute right-0 mt-1.5 w-52 bg-white rounded-[20px] shadow-xl border border-[#eaeaea] p-1.5 z-40"
+                        role="listbox"
+                      >
+                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#adadad]">
+                          Filter Timeframe
+                        </div>
+                        {TIME_FILTER_OPTIONS.map((opt) => {
+                          const isSelected = opt.id === timeFilter;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              role="option"
+                              aria-selected={isSelected}
+                              onClick={() => {
+                                setTimeFilter(opt.id);
+                                setIsTimeFilterOpen(false);
+                              }}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-[14px] text-[13px] font-medium transition-colors text-left cursor-pointer ${
+                                isSelected
+                                  ? "bg-[#f3f3f3] text-[#141414] font-semibold"
+                                  : "text-[#505050] hover:bg-[#f9f9f9] hover:text-[#141414]"
+                              }`}
+                            >
+                              <span>{opt.label}</span>
+                              {isSelected && (
+                                <svg className="w-4 h-4 text-[#141414]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
-              <div>
-                <span className="text-[11px] text-[#adadad] block uppercase font-medium">Total Revenue (₹)</span>
-                <span className="text-[22px] font-semibold">
-                  ₹{studentsList.reduce((acc, s) => acc + s.totalPaid, 0).toLocaleString("en-IN")}.00
-                </span>
-              </div>
-              <div>
-                <span className="text-[11px] text-[#adadad] block uppercase font-medium">Pending Dues (₹)</span>
-                <span className="text-[22px] font-semibold">
-                  ₹{studentsList.reduce((acc, s) => acc + s.remainingDue, 0).toLocaleString("en-IN")}.00
-                </span>
+
+              {/* Three Reimagined Metric Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 1. Total Enrolled */}
+                <div className="bg-gradient-to-b from-[#f5f8ff] to-[#ffffff] p-5 rounded-[24px] border border-[#e0e7ff] shadow-sm hover:shadow-md hover:border-[#c7d2fe] transition-all flex flex-col justify-between min-h-[145px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-[#4f46e5] uppercase tracking-wider">
+                      Total Enrolled
+                    </span>
+                    <div className="w-9 h-9 rounded-[12px] bg-[#eef2ff] text-[#4338ca] border border-[#e0e7ff] flex items-center justify-center">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  <div className="my-2">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={`${timeFilter}-enrolled`}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.18 }}
+                        className="text-[26px] font-bold text-[#141414] tracking-tight leading-none"
+                      >
+                        {timeFilteredStudents.length}{" "}
+                        <span className="text-[15px] font-medium text-[#475569]">
+                          {timeFilteredStudents.length === 1 ? "Student" : "Students"}
+                        </span>
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#eef2ff] flex items-center justify-between text-[11px] text-[#475569]">
+                    {timeFilteredStudents.length > 0 ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 font-medium text-[#4338ca]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#4338ca]"></span>
+                          <span>{metricsActiveCount} Active</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 text-[#64748b]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#94a3b8]"></span>
+                          <span>{metricsCompletedCount} Completed</span>
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[#94a3b8]">No enrollments in period</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Total Revenue (₹) */}
+                <div className="bg-gradient-to-b from-[#f2faf5] to-[#ffffff] p-5 rounded-[24px] border border-[#d1fae5] shadow-sm hover:shadow-md hover:border-[#a7f3d0] transition-all flex flex-col justify-between min-h-[145px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-[#047857] uppercase tracking-wider">
+                      Total Revenue (₹)
+                    </span>
+                    <div className="w-9 h-9 rounded-[12px] bg-[#ecfdf5] text-[#047857] border border-[#d1fae5] flex items-center justify-center font-bold text-[16px]">
+                      ₹
+                    </div>
+                  </div>
+
+                  <div className="my-2">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={`${timeFilter}-revenue`}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.18 }}
+                        className="text-[26px] font-bold text-[#141414] tracking-tight leading-none"
+                      >
+                        ₹{timeFilteredRevenue.toLocaleString("en-IN")}.00
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#e6f4ea] flex items-center justify-between text-[11px]">
+                    {timeFilteredRevenue > 0 ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 text-[#047857] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#047857]"></span>
+                          <span>{metricsCollectionRate}% collection rate</span>
+                        </span>
+                        <span className="text-[#065f46] font-medium">Cash Collected</span>
+                      </>
+                    ) : (
+                      <span className="text-[#94a3b8]">₹0 collections in period</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Pending Dues (₹) */}
+                <div className="bg-gradient-to-b from-[#fff7f2] to-[#ffffff] p-5 rounded-[24px] border border-[#fed7aa] shadow-sm hover:shadow-md hover:border-[#fdba74] transition-all flex flex-col justify-between min-h-[145px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-[#c2410c] uppercase tracking-wider">
+                      Pending Dues (₹)
+                    </span>
+                    <div className="w-9 h-9 rounded-[12px] bg-[#fff7ed] text-[#c2410c] border border-[#ffedd5] flex items-center justify-center">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  <div className="my-2">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={`${timeFilter}-dues`}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.18 }}
+                        className="text-[26px] font-bold text-[#141414] tracking-tight leading-none"
+                      >
+                        ₹{timeFilteredPendingDues.toLocaleString("en-IN")}.00
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#ffedd5] flex items-center justify-between text-[11px]">
+                    {timeFilteredPendingDues > 0 ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5 text-[#c2410c] font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#c2410c]"></span>
+                          <span>
+                            Across {metricsStudentsWithDues} {metricsStudentsWithDues === 1 ? "student" : "students"}
+                          </span>
+                        </span>
+                        <span className="text-[#9a3412] font-medium">Outstanding</span>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[#047857] font-medium">
+                        ✓ All dues cleared
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -561,24 +877,44 @@ function AdminDashboardContent() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 self-start sm:self-center">
                       {/* Owner Action: Delete Student Button */}
                       {isOwner && (
                         <button
                           onClick={() => handleDeleteStudent(selectedStudent.phone, selectedStudent.name)}
-                          className="px-3.5 py-1.5 rounded-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[12px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                          className="px-3.5 py-2 rounded-[14px] bg-rose-50/80 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                           title="Delete student permanently"
                         >
-                          <span>🗑 Delete Student</span>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          <span>Delete Student</span>
                         </button>
                       )}
 
-                      <div className="bg-[#f3f3f3] rounded-full px-5 py-2.5 text-right sm:text-center self-start">
-                        <div className="text-[24px] font-semibold text-[#141414] leading-none">
-                          {currentKm} <span className="text-[14px] text-[#707070] font-normal">/ {selectedStudent.targetKm} km</span>
+                      <div className="bg-[#fafafa] border border-[#e5e5e5] rounded-[18px] p-3 sm:px-4 sm:py-2.5 min-w-[150px] shadow-sm">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-[20px] font-bold text-[#141414] leading-none">
+                            {currentKm}
+                            <span className="text-[13px] text-[#707070] font-normal ml-1">/ {selectedStudent.targetKm} km</span>
+                          </span>
+                          <span className="text-[11px] font-semibold text-[#047857]">
+                            {selectedStudent.targetKm > 0
+                              ? Math.min(100, Math.round((currentKm / selectedStudent.targetKm) * 100))
+                              : 0}%
+                          </span>
                         </div>
-                        <div className="text-[11px] text-[#707070] font-medium mt-1">
-                          {selectedStudent.targetKm > 0 ? Math.min(100, Math.round((currentKm / selectedStudent.targetKm) * 100)) : 0}% Completed
+                        <div className="w-full h-1.5 bg-[#e5e5e5] rounded-full overflow-hidden mt-2">
+                          <div
+                            className="h-full bg-[#141414] rounded-full transition-all duration-300"
+                            style={{
+                              width: `${
+                                selectedStudent.targetKm > 0
+                                  ? Math.min(100, Math.round((currentKm / selectedStudent.targetKm) * 100))
+                                  : 0
+                              }%`,
+                            }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -673,23 +1009,35 @@ function AdminDashboardContent() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 self-start sm:self-center">
                       {isOwner && (
                         <button
                           onClick={() => handleDeleteStudent(selectedStudent.phone, selectedStudent.name)}
-                          className="px-3.5 py-1.5 rounded-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[12px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                          className="px-3.5 py-2 rounded-[14px] bg-rose-50/80 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                           title="Delete student permanently"
                         >
-                          <span>🗑 Delete Student</span>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          <span>Delete Student</span>
                         </button>
                       )}
 
-                      <div className="bg-[#f3f3f3] rounded-full px-5 py-2.5 text-right sm:text-center self-start">
-                        <div className="text-[24px] font-semibold text-[#141414] leading-none">
-                          {currentDays} <span className="text-[14px] text-[#707070] font-normal">/ 15 Days</span>
+                      <div className="bg-[#fafafa] border border-[#e5e5e5] rounded-[18px] p-3 sm:px-4 sm:py-2.5 min-w-[150px] shadow-sm">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-[20px] font-bold text-[#141414] leading-none">
+                            {currentDays}
+                            <span className="text-[13px] text-[#707070] font-normal ml-1">/ 15 Days</span>
+                          </span>
+                          <span className="text-[11px] font-semibold text-[#047857]">
+                            {Math.min(100, Math.round((currentDays / 15) * 100))}%
+                          </span>
                         </div>
-                        <div className="text-[11px] text-[#707070] font-medium mt-1">
-                          {Math.min(100, Math.round((currentDays / 15) * 100))}% Completed
+                        <div className="w-full h-1.5 bg-[#e5e5e5] rounded-full overflow-hidden mt-2">
+                          <div
+                            className="h-full bg-[#141414] rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.round((currentDays / 15) * 100))}%` }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -727,18 +1075,28 @@ function AdminDashboardContent() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 justify-end">
+                        <div className="w-full grid grid-cols-2 gap-3 pt-2">
                           <button
+                            type="button"
                             onClick={() => handleDaysChange(Math.max(0, currentDays - 1))}
-                            className="px-3 py-1 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[12px] font-semibold cursor-pointer"
+                            disabled={currentDays <= 0}
+                            className="h-12 sm:h-13 rounded-[16px] bg-[#f3f3f3] hover:bg-[#e5e5e5] active:scale-[0.99] text-[#141414] text-[14px] sm:text-[15px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 border border-[#e0e0e0] shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            - 1 Day
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M20 12H4" />
+                            </svg>
+                            <span>- 1 Day</span>
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDaysChange(Math.min(15, currentDays + 1))}
-                            className="px-3 py-1 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold cursor-pointer"
+                            disabled={currentDays >= 15}
+                            className="h-12 sm:h-13 rounded-[16px] bg-[#141414] hover:bg-[#262626] active:scale-[0.99] text-white text-[14px] sm:text-[15px] font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm hover:shadow disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            + 1 Day Completed
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                            <span>+ 1 Day Completed</span>
                           </button>
                         </div>
                       </div>
@@ -795,22 +1153,25 @@ function AdminDashboardContent() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 self-start sm:self-center">
                       {isOwner && (
                         <button
                           onClick={() => handleDeleteStudent(selectedStudent.phone, selectedStudent.name)}
-                          className="px-3.5 py-1.5 rounded-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[12px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                          className="px-3.5 py-2 rounded-[14px] bg-rose-50/80 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                           title="Delete client permanently"
                         >
-                          <span>🗑 Delete Client</span>
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          <span>Delete Client</span>
                         </button>
                       )}
 
-                      <div className="bg-[#f3f3f3] rounded-full px-5 py-2.5 text-right sm:text-center self-start">
-                        <div className="text-[16px] font-semibold text-[#141414]">
+                      <div className="bg-[#fafafa] border border-[#e5e5e5] rounded-[18px] p-3 sm:px-4 sm:py-2.5 min-w-[150px] shadow-sm text-right sm:text-left">
+                        <div className="text-[16px] font-bold text-[#141414] leading-tight">
                           Direct RTO
                         </div>
-                        <div className="text-[11px] text-[#707070] font-medium">
+                        <div className="text-[11px] text-[#707070] font-medium mt-0.5">
                           No Practical Km
                         </div>
                       </div>
@@ -845,102 +1206,268 @@ function AdminDashboardContent() {
 
               {/* Card 2: Financial Dues & Payment Ledger (In Rupees ₹) */}
               <div className="bg-[#ffffff] border border-[#f0f0f0] rounded-[24px] p-6 sm:p-8 space-y-6">
+                {/* Header: Title, Status Badge, and Record Payment Action */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#f0f0f0]">
                   <div>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#f3f3f3] text-[#141414]">
-                      Financial Ledger
-                    </span>
-                    <h3 className="text-[20px] font-semibold text-[#141414] tracking-tight mt-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#f3f3f3] text-[#141414]">
+                        Financial Ledger
+                      </span>
+                      {selectedStudent.remainingDue === 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-[#047857] border border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#047857]"></span>
+                          Paid in Full
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-[#c2410c] border border-amber-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#c2410c]"></span>
+                          Installment Active
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-[22px] font-bold text-[#141414] tracking-tight mt-1.5">
                       Fees & Payment Status.
                     </h3>
+                    <p className="text-[12px] text-[#707070] mt-0.5">
+                      {selectedStudent.dueDateNote || "Standard installment schedule and verified digital receipts"}
+                    </p>
                   </div>
 
-                  <div className="flex items-center gap-2.5">
-                    {/* Quick Record Payment for this student */}
+                  <div className="flex items-center gap-3">
                     <button
                       onClick={() => setNewPaymentModalOpen(true)}
-                      className="px-4 py-2 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-colors cursor-pointer"
+                      className="px-4 py-2.5 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-all cursor-pointer shadow-sm hover:shadow flex items-center gap-1.5"
                     >
-                      + Record Payment
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span>Record Payment</span>
                     </button>
+                  </div>
+                </div>
 
+                {/* Dual-Tone Collection Progress Ratio */}
+                <div className="bg-[#fafafa] border border-[#eaeaea] rounded-[20px] p-4 space-y-2.5">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="font-semibold text-[#141414] flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#047857]"></span>
+                      <span>Collection Progress:</span>
+                      <strong className="text-[#047857]">
+                        {selectedStudent.totalCourseFee > 0
+                          ? Math.min(100, Math.round((selectedStudent.totalPaid / selectedStudent.totalCourseFee) * 100))
+                          : 100}% Paid
+                      </strong>
+                    </span>
+                    <span className="text-[#707070] text-[11px]">
+                      {selectedStudent.remainingDue > 0
+                        ? `₹${selectedStudent.remainingDue.toLocaleString("en-IN")}.00 remaining`
+                        : "✓ All installments cleared"}
+                    </span>
+                  </div>
+
+                  {/* Dual-tone Progress Bar */}
+                  <div className="w-full h-2.5 bg-[#f0f0f0] rounded-full overflow-hidden flex">
                     <div
-                      className={`px-4 py-2 rounded-full text-center ${
-                        selectedStudent.remainingDue === 0 ? "bg-[#f3f3f3] text-[#141414]" : "bg-[#141414] text-white"
-                      }`}
-                    >
-                      <div className="text-[10px] font-semibold uppercase tracking-wider">Remaining Balance</div>
-                      <div className="text-[18px] font-semibold leading-tight">
-                        ₹{selectedStudent.remainingDue.toLocaleString("en-IN")}.00 INR
+                      className="h-full bg-[#047857] transition-all duration-500 rounded-l-full"
+                      style={{
+                        width: `${
+                          selectedStudent.totalCourseFee > 0
+                            ? Math.min(100, (selectedStudent.totalPaid / selectedStudent.totalCourseFee) * 100)
+                            : 100
+                        }%`,
+                      }}
+                    />
+                    {selectedStudent.remainingDue > 0 && (
+                      <div
+                        className="h-full bg-[#fed7aa] transition-all duration-500 rounded-r-full"
+                        style={{
+                          width: `${
+                            selectedStudent.totalCourseFee > 0
+                              ? Math.min(100, (selectedStudent.remainingDue / selectedStudent.totalCourseFee) * 100)
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* 3 Harmonic FinTech Milestone Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  {/* Total Agreed Fee */}
+                  <div className="bg-gradient-to-b from-[#f9fafb] to-[#ffffff] border border-[#eaedf0] rounded-[20px] p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-[#64748b] uppercase tracking-wider">
+                        Total Course Fee
+                      </span>
+                      <div className="w-8 h-8 rounded-[10px] bg-[#f1f5f9] text-[#475569] flex items-center justify-center">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <div className="text-[20px] font-bold text-[#141414] tracking-tight">
+                        ₹{selectedStudent.totalCourseFee.toLocaleString("en-IN")}.00
+                      </div>
+                      <div className="text-[11px] text-[#707070] mt-0.5">
+                        Fixed Package Pricing
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Paid to Date */}
+                  <div className="bg-gradient-to-b from-[#f2faf5] to-[#ffffff] border border-[#d1fae5] rounded-[20px] p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-[#047857] uppercase tracking-wider">
+                        Paid to Date
+                      </span>
+                      <div className="w-8 h-8 rounded-[10px] bg-[#ecfdf5] text-[#047857] border border-[#d1fae5] flex items-center justify-center font-bold text-[14px]">
+                        ₹
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <div className="text-[20px] font-bold text-[#047857] tracking-tight">
+                        ₹{selectedStudent.totalPaid.toLocaleString("en-IN")}.00
+                      </div>
+                      <div className="text-[11px] text-[#065f46] mt-0.5 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#047857]"></span>
+                        <span>
+                          {selectedStudent.totalCourseFee > 0
+                            ? Math.min(100, Math.round((selectedStudent.totalPaid / selectedStudent.totalCourseFee) * 100))
+                            : 100}% Collected
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Remaining Due */}
+                  <div
+                    className={`rounded-[20px] p-4 shadow-sm border ${
+                      selectedStudent.remainingDue > 0
+                        ? "bg-gradient-to-b from-[#fff7f2] to-[#ffffff] border-[#fed7aa]"
+                        : "bg-gradient-to-b from-[#f2faf5] to-[#ffffff] border-[#d1fae5]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-[11px] font-semibold uppercase tracking-wider ${
+                          selectedStudent.remainingDue > 0 ? "text-[#c2410c]" : "text-[#047857]"
+                        }`}
+                      >
+                        {selectedStudent.remainingDue > 0 ? "Amount Due" : "Settlement"}
+                      </span>
+                      <div
+                        className={`w-8 h-8 rounded-[10px] flex items-center justify-center ${
+                          selectedStudent.remainingDue > 0
+                            ? "bg-[#fff7ed] text-[#c2410c] border border-[#ffedd5]"
+                            : "bg-[#ecfdf5] text-[#047857] border border-[#d1fae5]"
+                        }`}
+                      >
+                        {selectedStudent.remainingDue > 0 ? (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <div
+                        className={`text-[20px] font-bold tracking-tight ${
+                          selectedStudent.remainingDue > 0 ? "text-[#c2410c]" : "text-[#047857]"
+                        }`}
+                      >
+                        ₹{selectedStudent.remainingDue.toLocaleString("en-IN")}.00
+                      </div>
+                      <div className="text-[11px] text-[#707070] mt-0.5">
+                        {selectedStudent.remainingDue > 0
+                          ? "Pending settlement"
+                          : "Fully paid & closed"}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-[#f3f3f3] rounded-[16px] p-3.5">
-                    <span className="text-[11px] text-[#707070] block font-semibold uppercase">Total Fee</span>
-                    <span className="text-[18px] font-semibold text-[#141414]">
-                      ₹{selectedStudent.totalCourseFee.toLocaleString("en-IN")}.00
-                    </span>
-                  </div>
-                  <div className="bg-[#f3f3f3] rounded-[16px] p-3.5">
-                    <span className="text-[11px] text-[#707070] block font-semibold uppercase">Paid to Date</span>
-                    <span className="text-[18px] font-semibold text-[#141414]">
-                      ₹{selectedStudent.totalPaid.toLocaleString("en-IN")}.00
-                    </span>
-                  </div>
-                  <div className="bg-[#f3f3f3] rounded-[16px] p-3.5">
-                    <span className="text-[11px] text-[#707070] block font-semibold uppercase">Amount Due</span>
-                    <span className="text-[18px] font-semibold text-[#141414]">
-                      ₹{selectedStudent.remainingDue.toLocaleString("en-IN")}.00
-                    </span>
-                  </div>
-                </div>
-
                 {/* Receipts List */}
-                <div className="space-y-3 pt-2">
-                  <span className="text-[12px] font-semibold uppercase tracking-wider text-[#707070] block">
-                    Payment History:
-                  </span>
+                <div className="space-y-3 pt-3 border-t border-[#f0f0f0]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-[#141414] flex items-center gap-2">
+                      <span>Payment History</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#f3f3f3] text-[#707070]">
+                        {selectedStudent.payments?.length || 0}
+                      </span>
+                    </span>
+                    <span className="text-[11px] text-[#707070]">Official SafeDrive Receipts</span>
+                  </div>
 
-                  <div className="space-y-2">
-                    {selectedStudent.payments.map((p: any) => (
-                      <div
-                        key={p.receiptNumber}
-                        className="bg-[#f3f3f3]/70 border border-[#f0f0f0] rounded-[16px] p-3.5 flex items-center justify-between gap-3 text-[13px]"
-                      >
-                        <div>
-                          <div className="font-semibold text-[#141414] flex items-center gap-2">
-                            <span className="font-mono text-[12px]">{p.receiptNumber}</span>
-                            <span className="text-[11px] font-normal text-[#707070]">· {p.date}</span>
-                            <span className="px-2 py-0.5 rounded-full bg-white text-[#141414] text-[10px] font-semibold border border-[#e0e0e0]">
-                              {p.method}
+                  {selectedStudent.payments && selectedStudent.payments.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {selectedStudent.payments.map((p: any) => (
+                        <div
+                          key={p.receiptNumber}
+                          className="bg-white border border-[#e5e5e5] hover:border-[#d4d4d4] rounded-[18px] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[13px] shadow-sm transition-all"
+                        >
+                          <div className="flex items-start sm:items-center gap-3">
+                            <div className="w-9 h-9 rounded-[12px] bg-[#f5f5f5] text-[#141414] flex items-center justify-center shrink-0 border border-[#e0e0e0]">
+                              {p.method?.toLowerCase().includes("upi") ? (
+                                <svg className="w-4 h-4 text-[#2563eb]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                              ) : p.method?.toLowerCase().includes("cash") ? (
+                                <svg className="w-4 h-4 text-[#047857]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4 text-[#475569]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                </svg>
+                              )}
+                            </div>
+
+                            <div>
+                              <div className="font-semibold text-[#141414] flex items-center gap-2 flex-wrap">
+                                <span className="font-mono text-[13px] tracking-tight">{p.receiptNumber}</span>
+                                <span className="text-[11px] font-normal text-[#707070]">· {p.date}</span>
+                                <span className="px-2 py-0.5 rounded-full bg-[#f3f3f3] text-[#141414] text-[10px] font-bold uppercase tracking-wider">
+                                  {p.method}
+                                </span>
+                              </div>
+                              <div className="text-[12px] text-[#707070] mt-0.5">
+                                Recorded by {p.recordedBy || "Staff"} {p.referenceNote ? `· "${p.referenceNote}"` : ""}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#f0f0f0]">
+                            <span className="text-[16px] font-bold text-[#047857]">
+                              +₹{p.amount.toLocaleString("en-IN")}.00
                             </span>
-                          </div>
-                          <div className="text-[12px] text-[#707070] mt-0.5">
-                            Recorded: {p.recordedBy} {p.referenceNote ? `(${p.referenceNote})` : ""}
+                            <button
+                              type="button"
+                              onClick={() => setReceiptModalData({ student: selectedStudent, payment: p })}
+                              className="px-3.5 py-1.5 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-all cursor-pointer shadow-sm hover:shadow flex items-center gap-1"
+                            >
+                              <span>Receipt ↗</span>
+                            </button>
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3">
-                          <span className="font-semibold text-[#141414]">
-                            ₹{p.amount.toLocaleString("en-IN")}.00
-                          </span>
-                          <button
-                            onClick={() => setReceiptModalData({ student: selectedStudent, payment: p })}
-                            className="px-3.5 py-1.5 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-colors cursor-pointer"
-                          >
-                            View Receipt ↗
-                          </button>
-                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 rounded-[20px] bg-[#fafafa] border border-[#eaeaea] text-center space-y-2">
+                      <div className="w-10 h-10 rounded-full bg-[#f0f0f0] text-[#707070] flex items-center justify-center mx-auto text-[16px]">
+                        🧾
                       </div>
-                    ))}
-                  </div>
-
-                  <div className="text-[12px] text-[#707070] pt-1">
-                    Note: {selectedStudent.dueDateNote}
-                  </div>
+                      <div className="text-[13px] font-semibold text-[#141414]">No payments logged yet</div>
+                      <p className="text-[12px] text-[#707070] max-w-sm mx-auto">
+                        Record the first student installment to generate an official numbered receipt and update the ledger.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

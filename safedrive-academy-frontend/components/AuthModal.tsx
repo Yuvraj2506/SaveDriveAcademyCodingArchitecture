@@ -54,6 +54,7 @@ export default function AuthModal({
   // Login form state
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   // First time setup state
   const [setupStep, setSetupStep] = useState<"verify" | "set_password">("verify");
@@ -61,6 +62,8 @@ export default function AuthModal({
   const [verifiedName, setVerifiedName] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -305,8 +308,9 @@ export default function AuthModal({
             aria-hidden="true"
           />
 
-          {/* Modal Card - Pure Slide-In and Pure Slide-Out (Zero Fading, Opacity 1) */}
+          {/* Modal Card - Pure Slide-In and Pure Slide-Out with Fluid Spring Layout Reflow */}
           <motion.div
+            layout
             key="auth-modal-card"
             initial={{ y: "100vh" }}
             animate={{ y: 0 }}
@@ -314,7 +318,11 @@ export default function AuthModal({
               y: "100vh",
               transition: { duration: 0.38, ease: [0.32, 0, 0.67, 0] },
             }}
-            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            transition={{
+              layout: { type: "spring", stiffness: 400, damping: 35 },
+              duration: 0.45,
+              ease: [0.16, 1, 0.3, 1],
+            }}
             className="relative w-full max-w-md bg-white border border-[#f0f0f0] rounded-[24px] p-6 sm:p-8 shadow-2xl z-10"
             role="dialog"
             aria-modal="true"
@@ -346,9 +354,9 @@ export default function AuthModal({
               </p>
             </div>
 
-            {/* Mode Switcher */}
+            {/* Mode Switcher with Animated Sliding Pill */}
             {!isFirstTimeSetup && (
-              <div className="grid grid-cols-2 p-1 rounded-full bg-[#f3f3f3] gap-1 mb-4">
+              <div className="relative grid grid-cols-2 p-1 rounded-full bg-[#f3f3f3] gap-1 mb-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -356,11 +364,18 @@ export default function AuthModal({
                     setIsRoleDropdownOpen(false);
                     setErrorMessage(null);
                   }}
-                  className={`py-1.5 text-[13px] font-semibold rounded-full transition-all cursor-pointer ${
-                    mainTab === "user" ? "bg-[#ffffff] text-[#141414] shadow-sm" : "text-[#707070] hover:text-[#141414]"
+                  className={`relative py-1.5 text-[13px] font-semibold rounded-full transition-colors cursor-pointer ${
+                    mainTab === "user" ? "text-[#141414]" : "text-[#707070] hover:text-[#141414]"
                   }`}
                 >
-                  Student (User)
+                  {mainTab === "user" && (
+                    <motion.div
+                      layoutId="active-tab-indicator"
+                      className="absolute inset-0 bg-white rounded-full shadow-sm"
+                      transition={{ type: "spring", stiffness: 450, damping: 35 }}
+                    />
+                  )}
+                  <span className="relative z-10">Student (User)</span>
                 </button>
                 <button
                   type="button"
@@ -369,45 +384,72 @@ export default function AuthModal({
                     setIsRoleDropdownOpen(false);
                     setErrorMessage(null);
                   }}
-                  className={`py-1.5 text-[13px] font-semibold rounded-full transition-all cursor-pointer ${
-                    mainTab === "admin" ? "bg-[#ffffff] text-[#141414] shadow-sm" : "text-[#707070] hover:text-[#141414]"
+                  className={`relative py-1.5 text-[13px] font-semibold rounded-full transition-colors cursor-pointer ${
+                    mainTab === "admin" ? "text-[#141414]" : "text-[#707070] hover:text-[#141414]"
                   }`}
                 >
-                  Admin Portal
+                  {mainTab === "admin" && (
+                    <motion.div
+                      layoutId="active-tab-indicator"
+                      className="absolute inset-0 bg-white rounded-full shadow-sm"
+                      transition={{ type: "spring", stiffness: 450, damping: 35 }}
+                    />
+                  )}
+                  <span className="relative z-10">Admin Portal</span>
                 </button>
               </div>
             )}
 
-            {/* Custom Accessible Admin Role Selector (Zero Layout Shift Floating Dropdown) */}
-            {!isFirstTimeSetup && mainTab === "admin" && (
-              <div ref={roleDropdownRef} className="relative w-full mb-4">
-                <label
-                  id="admin-role-dropdown-label"
-                  className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1.5"
-                >
-                  Select Admin Role *
-                </label>
-                <button
-                  ref={roleTriggerRef}
-                  type="button"
-                  role="combobox"
-                  id="admin-role-combobox"
-                  aria-expanded={isRoleDropdownOpen}
-                  aria-haspopup="listbox"
-                  aria-controls="admin-role-listbox"
-                  aria-labelledby="admin-role-dropdown-label admin-role-combobox"
-                  aria-activedescendant={`role-option-${adminSubRole}`}
-                  onClick={() => {
-                    setIsRoleDropdownOpen((prev) => !prev);
-                    setErrorMessage(null);
+            {/* Custom Accessible Admin Role Selector (Zero Layout Shift Floating Dropdown with AnimatePresence) */}
+            <AnimatePresence initial={false}>
+              {!isFirstTimeSetup && mainTab === "admin" && (
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  animate={{
+                    opacity: 1,
+                    height: "auto",
+                    marginBottom: 16,
+                    transitionEnd: { overflow: "visible" },
                   }}
-                  onKeyDown={handleRoleTriggerKeyDown}
-                  className={`w-full flex items-center justify-between p-2.5 sm:p-3 rounded-[18px] border transition-all text-left cursor-pointer outline-none ${
-                    isRoleDropdownOpen
-                      ? "bg-[#ffffff] border-[#141414] shadow-md ring-2 ring-[#141414]/10"
-                      : "bg-[#f8f8f8] border-[#e8e8e8] hover:border-[#141414]/30 hover:bg-[#f3f3f3]"
-                  }`}
+                  exit={{
+                    opacity: 0,
+                    height: 0,
+                    marginBottom: 0,
+                    overflow: "hidden",
+                    transition: { duration: 0.25, ease: [0.16, 1, 0.3, 1] },
+                  }}
+                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  ref={roleDropdownRef}
+                  className="relative w-full overflow-hidden"
                 >
+                  <label
+                    id="admin-role-dropdown-label"
+                    className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1.5"
+                  >
+                    Select Admin Role *
+                  </label>
+                  <button
+                    ref={roleTriggerRef}
+                    type="button"
+                    role="combobox"
+                    id="admin-role-combobox"
+                    aria-expanded={isRoleDropdownOpen}
+                    aria-haspopup="listbox"
+                    aria-controls="admin-role-listbox"
+                    aria-labelledby="admin-role-dropdown-label admin-role-combobox"
+                    aria-activedescendant={`role-option-${adminSubRole}`}
+                    onClick={() => {
+                      setIsRoleDropdownOpen((prev) => !prev);
+                      setErrorMessage(null);
+                    }}
+                    onKeyDown={handleRoleTriggerKeyDown}
+                    className={`w-full flex items-center justify-between p-2.5 sm:p-3 rounded-[18px] border transition-all text-left cursor-pointer outline-none ${
+                      isRoleDropdownOpen
+                        ? "bg-[#ffffff] border-[#141414] shadow-md ring-2 ring-[#141414]/10"
+                        : "bg-[#f8f8f8] border-[#e8e8e8] hover:border-[#141414]/30 hover:bg-[#f3f3f3]"
+                    }`}
+                  >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-8 h-8 rounded-full bg-white border border-[#e5e5e5] flex items-center justify-center shrink-0 shadow-xs">
                       {adminSubRole === "staff" ? (
@@ -509,8 +551,9 @@ export default function AuthModal({
                     </motion.ul>
                   )}
                 </AnimatePresence>
-              </div>
+              </motion.div>
             )}
+          </AnimatePresence>
 
             {/* Error Alert Box */}
             {errorMessage && (
@@ -614,30 +657,68 @@ export default function AuthModal({
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
                     Create New Password (min 8 chars) *
                   </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password"
-                    className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      required
+                      minLength={8}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                      className="w-full h-10 pl-3.5 pr-10 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#707070] hover:text-[#141414] p-1 transition-colors cursor-pointer"
+                      aria-label={showNewPassword ? "Hide password" : "Show password"}
+                    >
+                      {showNewPassword ? (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
                     Confirm New Password *
                   </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
-                    className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      required
+                      minLength={8}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter new password"
+                      className="w-full h-10 pl-3.5 pr-10 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#707070] hover:text-[#141414] p-1 transition-colors cursor-pointer"
+                      aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                    >
+                      {showConfirmPassword ? (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <button
@@ -659,8 +740,8 @@ export default function AuthModal({
           </div>
         ) : (
           /* REGULAR SIGN IN FORM (EXPRESS BACKEND AUTH) */
-          <form onSubmit={handleLoginSubmit} className="space-y-3.5">
-            <div>
+          <motion.form layout onSubmit={handleLoginSubmit} className="space-y-3.5">
+            <motion.div layout>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
                 {mainTab === "user"
                   ? "Student Registered Mobile Number *"
@@ -682,9 +763,9 @@ export default function AuthModal({
                 }
                 className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
               />
-            </div>
+            </motion.div>
 
-            <div>
+            <motion.div layout>
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070]">
                   Password (min 8 characters) *
@@ -693,17 +774,37 @@ export default function AuthModal({
                   Forgot?
                 </a>
               </div>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
-              />
-            </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full h-10 pl-3.5 pr-10 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#707070] hover:text-[#141414] p-1 transition-colors cursor-pointer"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </motion.div>
 
-            <button
+            <motion.button
+              layout
               type="submit"
               disabled={loading}
               className="w-full h-10 rounded-full bg-[#141414] hover:bg-[#262626] disabled:bg-[#707070] text-white text-[13px] font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2"
@@ -723,24 +824,33 @@ export default function AuthModal({
                     : "Owner"}
                 </span>
               )}
-            </button>
+            </motion.button>
 
-            {mainTab === "user" && (
-              <div className="text-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsFirstTimeSetup(true);
-                    setSetupStep("verify");
-                    setErrorMessage(null);
-                  }}
-                  className="text-[12px] font-semibold text-[#141414] hover:underline cursor-pointer"
+            <AnimatePresence initial={false}>
+              {mainTab === "user" && (
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                  className="text-center pt-2 overflow-hidden"
                 >
-                  New student? Set up password & activate account →
-                </button>
-              </div>
-            )}
-          </form>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFirstTimeSetup(true);
+                      setSetupStep("verify");
+                      setErrorMessage(null);
+                    }}
+                    className="text-[12px] font-semibold text-[#141414] hover:underline cursor-pointer"
+                  >
+                    New student? Set up password & activate account →
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.form>
         )}
           </motion.div>
         </motion.div>
