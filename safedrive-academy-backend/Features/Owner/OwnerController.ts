@@ -36,6 +36,7 @@ export class OwnerController {
     this._router.get("/students/archived", this.GetArchivedStudents.bind(this));
     this._router.post("/students/:id/restore", this.RestoreStudent.bind(this));
     this._router.delete("/students/:id/permanent", this.PermanentlyDeleteStudent.bind(this));
+    this._router.post("/students/:id/re-enroll", this.ReenrollStudent.bind(this));
     this._router.get("/students", this.GetAllStudents.bind(this));
     this._router.patch("/students/:id", this.UpdateStudentTarget.bind(this));
     this._router.delete("/students/:id", this.DeleteStudent.bind(this));
@@ -212,6 +213,32 @@ export class OwnerController {
         );
     } catch (error: any) {
       this.HandleError(res, error, "RestoreStudent");
+    }
+  }
+
+  public async ReenrollStudent(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const id = String(req.params.id);
+      const payload = req.body;
+      const ownerName = req.body?.ApprovedBy || "Yuvraj Gupta (Owner)";
+
+      const response: OwnerStudentResponseDTO = await OwnerService.Current.ReenrollStudentAsync(
+        id,
+        payload,
+        ownerName
+      );
+
+      res
+        .status(200)
+        .json(
+          ApiResponseClass.Succeeded<OwnerStudentResponseDTO>(
+            response,
+            OwnerConstant.STUDENT_REENROLLED,
+            200
+          )
+        );
+    } catch (error: any) {
+      this.HandleError(res, error, "ReenrollStudent");
     }
   }
 

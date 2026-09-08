@@ -6,6 +6,8 @@ import { RejectStudentRequestDTO } from "../Models/RejectStudentRequestDTO";
 import { UpdateStudentTargetDTO } from "../Models/UpdateStudentTargetDTO";
 import { OwnerStudentResponseDTO } from "../Models/OwnerStudentResponseDTO";
 
+import { ReenrollStudentDTO } from "../Models/ReenrollStudentDTO";
+
 export class OwnerService {
   private static readonly _current: OwnerService = new OwnerService();
 
@@ -39,6 +41,8 @@ export class OwnerService {
       RejectionReason: student.RejectionReason,
       Status: student.Status,
       Payments: student.Payments || [],
+      CourseHistory: student.CourseHistory || [],
+      IsInactive: student.IsInactive || false,
       IsDeleted: student.IsDeleted || false,
       DeletedAt: student.DeletedAt || null
     };
@@ -211,6 +215,89 @@ export class OwnerService {
 
     const updated = await StudentModel.findOne(query).exec();
     return this.MapToDTO(updated || student);
+  }
+
+  public async ReenrollStudentAsync(
+    idOrPhone: string,
+    payload: ReenrollStudentDTO,
+    ownerName: string = "Owner Administrator"
+  ): Promise<OwnerStudentResponseDTO> {
+    const query = this.GetQuery(idOrPhone);
+    const student: IStudentDocument | null = await StudentModel.findOne({
+      ...query,
+      IsDeleted: { $ne: true }
+    }).exec();
+
+    if (!student) {
+      throw new NotFoundCException(OwnerConstant.STUDENT_NOT_FOUND);
+    }
+
+    const today = new Date().toLocaleDateString("en-IN", {
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    });
+
+    // 1. Archive current course to CourseHistory
+    if (!student.CourseHistory) {
+      student.CourseHistory = [];
+    }
+    student.CourseHistory.push({
+      CoursePackage: student.CoursePackage,
+      VehicleType: student.VehicleType,
+      TrainingType: student.TrainingType,
+      TargetKm: student.TargetKm || 0,
+      CompletedKm: student.CompletedKm || 0,
+      TotalDays: student.TotalDays || 0,
+      CompletedDays: student.CompletedDays || 0,
+      Fee: student.TotalCourseFee || 0,
+      EnrolledDate: student.ApprovedDate || student.RequestedDate || today,
+      CompletedDate: today,
+      AssignedInstructor: student.AssignedInstructor || "Desk Instructor"
+    });
+
+    // 2. Set new course details & reset metrics for new batch
+    student.VehicleType = payload.VehicleType || "4-Wheeler";
+    student.CoursePackage = payload.CoursePackage;
+    student.TrainingType = payload.TrainingType || "4w_personal";
+    student.TargetKm = payload.TargetKm !== undefined ? payload.TargetKm : (payload.VehicleType === "4-Wheeler" ? 120 : 0);
+    student.TotalDays = payload.TotalDays !== undefined ? payload.TotalDays : (payload.VehicleType === "2-Wheeler" ? 15 : 0);
+    student.CompletedKm = 0;
+    student.CompletedDays = 0;
+    if (payload.AssignedInstructor) {
+      student.AssignedInstructor = payload.AssignedInstructor;
+    }
+
+    // 3. Accumulate financials & add new payment receipt if provided
+    student.TotalCourseFee = (student.TotalCourseFee || 0) + (payload.NewCourseFee || 0);
+    student.TotalPaid = (student.TotalPaid || 0) + (payload.InitialPayment || 0);
+    student.RemainingDue = Math.max(
+      0,
+      (student.RemainingDue || 0) + ((payload.NewCourseFee || 0) - (payload.InitialPayment || 0))
+    );
+
+    if (payload.InitialPayment > 0) {
+      const receiptNum = `REC-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
+      if (!student.Payments) {
+        student.Payments = [];
+      }
+      student.Payments.push({
+        ReceiptNumber: receiptNum,
+        Date: today,
+        Method: payload.PaymentMethod || "UPI",
+        Amount: payload.InitialPayment,
+        RecordedBy: ownerName,
+        ReferenceNote: payload.ReferenceNote || `Re-enrollment: ${payload.CoursePackage}`
+      });
+    }
+
+    student.ApprovedDate = today;
+    student.ApprovedBy = ownerName;
+    student.IsInactive = false;
+    student.Status = StudentRequestStatusEnum.Approved;
+
+    await student.save();
+    return this.MapToDTO(student);
   }
 
   public async PermanentlyDeleteStudentAsync(idOrPhone: string): Promise<boolean> {

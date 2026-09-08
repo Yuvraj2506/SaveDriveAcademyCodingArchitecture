@@ -26,7 +26,22 @@ export interface OwnerStudentResponseDTO {
     Method: string;
     Amount: number;
     RecordedBy: string;
+    ReferenceNote?: string;
   }>;
+  CourseHistory?: Array<{
+    CoursePackage: string;
+    VehicleType: string;
+    TrainingType: string;
+    TargetKm: number;
+    CompletedKm: number;
+    TotalDays: number;
+    CompletedDays: number;
+    Fee: number;
+    EnrolledDate: string;
+    CompletedDate: string;
+    AssignedInstructor?: string;
+  }>;
+  IsInactive?: boolean;
   IsDeleted?: boolean;
   DeletedAt?: string | Date | null;
 }

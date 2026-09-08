@@ -15,6 +15,20 @@ export interface IStudentPaymentRecord {
   ReferenceNote?: string;
 }
 
+export interface ICourseHistory {
+  CoursePackage: string;
+  VehicleType: string;
+  TrainingType: string;
+  TargetKm: number;
+  CompletedKm: number;
+  TotalDays: number;
+  CompletedDays: number;
+  Fee: number;
+  EnrolledDate: string;
+  CompletedDate: string;
+  AssignedInstructor?: string;
+}
+
 export interface IStudentDocument extends Document {
   Name: string;
   PhoneNumber: string;
@@ -37,11 +51,30 @@ export interface IStudentDocument extends Document {
   RejectionReason?: string | null;
   Status: StudentRequestStatusEnum;
   Payments: IStudentPaymentRecord[];
+  CourseHistory: ICourseHistory[];
+  IsInactive?: boolean;
   IsDeleted?: boolean;
   DeletedAt?: Date | null;
   CreatedAt: Date;
   UpdatedAt: Date;
 }
+
+const CourseHistorySchema: Schema<ICourseHistory> = new Schema<ICourseHistory>(
+  {
+    CoursePackage: { type: String, required: true },
+    VehicleType: { type: String, required: true },
+    TrainingType: { type: String, required: true },
+    TargetKm: { type: Number, default: 0 },
+    CompletedKm: { type: Number, default: 0 },
+    TotalDays: { type: Number, default: 0 },
+    CompletedDays: { type: Number, default: 0 },
+    Fee: { type: Number, default: 0 },
+    EnrolledDate: { type: String, required: true },
+    CompletedDate: { type: String, required: true },
+    AssignedInstructor: { type: String, default: "" }
+  },
+  { _id: false }
+);
 
 const StudentPaymentSchema: Schema<IStudentPaymentRecord> = new Schema<IStudentPaymentRecord>(
   {
@@ -158,6 +191,15 @@ const StudentSchema: Schema<IStudentDocument> = new Schema<IStudentDocument>(
     Payments: {
       type: [StudentPaymentSchema],
       default: []
+    },
+    CourseHistory: {
+      type: [CourseHistorySchema],
+      default: []
+    },
+    IsInactive: {
+      type: Boolean,
+      default: false,
+      index: true
     },
     IsDeleted: {
       type: Boolean,

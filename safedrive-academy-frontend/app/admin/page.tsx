@@ -9,6 +9,7 @@ import AuthGuard from "@/components/AuthGuard";
 import NewStudentModal from "@/components/NewStudentModal";
 import NewPaymentModal from "@/components/NewPaymentModal";
 import ReceiptModal from "@/components/ReceiptModal";
+import ReenrollModal from "@/components/ReenrollModal";
 import Footer from "@/components/Footer";
 
 type TimeFilter = "all" | "30d" | "90d" | "180d" | "365d" | "custom";
@@ -59,6 +60,16 @@ function parseFlexibleDate(dateStr?: string): Date | null {
   return !isNaN(direct.getTime()) ? direct : null;
 }
 
+export function isStudentInactive(s: CleanStudentData): boolean {
+  if (s.isInactive) return true;
+  const refDateStr = s.approvedDate || s.registrationDate;
+  const refDate = parseFlexibleDate(refDateStr);
+  if (!refDate) return false;
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  return refDate < sixMonthsAgo;
+}
+
 function isDateInRange(
   dateStr: string | undefined,
   days: number | null,
@@ -104,13 +115,14 @@ function AdminDashboardContent() {
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"students" | "pending" | "archived">("students");
+  const [activeTab, setActiveTab] = useState<"active" | "inactive" | "pending" | "archived">("active");
   const [pendingFilter, setPendingFilter] = useState<"all" | "new_student" | "new_payment">("all");
   const [isPendingFilterOpen, setIsPendingFilterOpen] = useState(false);
   const pendingFilterRef = useRef<HTMLDivElement>(null);
 
   const [newStudentModalOpen, setNewStudentModalOpen] = useState(false);
   const [newPaymentModalOpen, setNewPaymentModalOpen] = useState(false);
+  const [reenrollModalStudent, setReenrollModalStudent] = useState<CleanStudentData | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [receiptModalData, setReceiptModalData] = useState<{
     student: CleanStudentData;
@@ -363,12 +375,22 @@ function AdminDashboardContent() {
       setActionMessage("Student registration approved! Student can now activate their account.");
       setTimeout(() => setActionMessage(null), 3500);
       await loadData();
-      setActiveTab("students");
+      setActiveTab("active");
     } catch (err: any) {
       console.error("Error approving request:", err);
       setActionMessage(err.message || "Failed to approve request.");
       setTimeout(() => setActionMessage(null), 3500);
     }
+  };
+
+  // Owner Action: Student Re-enrolled with New Course -> updates database & refetches
+  const handleStudentReenrolled = async (updatedStudent: CleanStudentData) => {
+    setReenrollModalStudent(null);
+    setActionMessage(`Student "${updatedStudent.name}" re-enrolled with new course & active status!`);
+    setTimeout(() => setActionMessage(null), 5000);
+    await loadData();
+    setSelectedStudent(updatedStudent);
+    setActiveTab("active");
   };
 
   // Owner Action: Reject Request
@@ -391,13 +413,33 @@ function AdminDashboardContent() {
     : 0;
   const remainingKm = selectedStudent ? Math.max(0, selectedStudent.targetKm - currentKm) : 0;
 
-  const filteredStudents = studentsList.filter((s) => {
+  const activeStudentsList = useMemo(() => {
+    return studentsList.filter((s) => !isStudentInactive(s));
+  }, [studentsList]);
+
+  const inactiveStudentsList = useMemo(() => {
+    return studentsList.filter((s) => isStudentInactive(s));
+  }, [studentsList]);
+
+  const filteredActiveStudents = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return (
-      s.name.toLowerCase().includes(q) ||
-      s.phone.replace(/\D/g, "").includes(q.replace(/\D/g, ""))
+    if (!q) return activeStudentsList;
+    return activeStudentsList.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.phone.replace(/\D/g, "").includes(q.replace(/\D/g, ""))
     );
-  });
+  }, [activeStudentsList, searchQuery]);
+
+  const filteredInactiveStudents = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return inactiveStudentsList;
+    return inactiveStudentsList.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.phone.replace(/\D/g, "").includes(q.replace(/\D/g, ""))
+    );
+  }, [inactiveStudentsList, searchQuery]);
 
   const filteredPendingRequests = useMemo(() => {
     if (pendingFilter === "new_student") {
@@ -808,22 +850,43 @@ function AdminDashboardContent() {
           )}
 
           {/* ═══════════════════════════════════════════════════════
-              STUDENTS DIRECTORY, PENDING QUEUE & ARCHIVE TABS
+              STUDENTS DIRECTORY, INACTIVE LIST, PENDING QUEUE & ARCHIVE TABS
               ═══════════════════════════════════════════════════════ */}
           <div className="bg-[#ffffff] p-5 sm:p-6 rounded-[24px] border border-[#f0f0f0] space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#f0f0f0]">
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("students")}
+                  onClick={() => setActiveTab("active")}
                   className={`px-4 py-1.5 rounded-full text-[12px] font-semibold transition-all cursor-pointer ${
-                    activeTab === "students"
+                    activeTab === "active"
                       ? "bg-[#141414] text-white"
                       : "bg-[#f3f3f3] text-[#707070] hover:text-[#141414]"
                   }`}
                 >
-                  All Students ({studentsList.length})
+                  Active Students ({activeStudentsList.length})
                 </button>
+
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("inactive")}
+                    className={`px-4 py-1.5 rounded-full text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      activeTab === "inactive"
+                        ? "bg-[#141414] text-white"
+                        : "bg-[#f3f3f3] text-[#707070] hover:text-[#141414]"
+                    }`}
+                  >
+                    <span>Inactive Students (&gt;6 Mos)</span>
+                    {inactiveStudentsList.length > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                        activeTab === "inactive" ? "bg-amber-400 text-[#141414]" : "bg-amber-100 text-amber-900 border border-amber-300"
+                      }`}>
+                        {inactiveStudentsList.length}
+                      </span>
+                    )}
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -865,13 +928,13 @@ function AdminDashboardContent() {
               </div>
 
               <span className="text-[12px] text-[#707070]">
-                {isOwner ? "Owner: Full management, approval & recovery access" : "Staff: Click student name to pop details"}
+                {isOwner ? "Owner: Full management, re-enrollment & recovery" : "Staff: Click student name to view details"}
               </span>
             </div>
 
-            {activeTab === "students" ? (
+            {activeTab === "active" ? (
               <>
-                {/* Search Input for Name / Mobile Number */}
+                {/* Search Input for Active Students */}
                 <div className="relative">
                   <div className="flex items-center gap-2.5 bg-[#f0f0f0] px-4 py-2.5 rounded-full border border-transparent focus-within:border-[#141414] transition-colors">
                     <svg className="w-4 h-4 text-[#707070] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -895,15 +958,15 @@ function AdminDashboardContent() {
                   </div>
                 </div>
 
-                {/* Compact Student Names List */}
+                {/* Active Students Cards Grid */}
                 <div className="space-y-1.5 pt-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-[#707070] block">
-                    Select a student to view and edit details:
+                    Active Enrolled Students ({filteredActiveStudents.length}):
                   </span>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                    {filteredStudents.length > 0 ? (
-                      filteredStudents.map((stu) => (
+                    {filteredActiveStudents.length > 0 ? (
+                      filteredActiveStudents.map((stu) => (
                         <button
                           key={stu.phone}
                           onClick={() => {
@@ -940,12 +1003,130 @@ function AdminDashboardContent() {
                       ))
                     ) : (
                       <div className="col-span-full py-4 text-center text-[13px] text-[#707070]">
-                        No student record found matching "{searchQuery}".
+                        No active student record found matching "{searchQuery}".
                       </div>
                     )}
                   </div>
                 </div>
               </>
+            ) : activeTab === "inactive" ? (
+              /* ─── INACTIVE STUDENTS (>6 CALENDAR MONTHS) ─── */
+              <div className="space-y-4 pt-1">
+                <div className="bg-amber-50/70 border border-amber-200/80 rounded-[18px] p-4 text-[12px] text-amber-900 flex items-start gap-3">
+                  <span className="text-[18px] leading-none">⏳</span>
+                  <div>
+                    <strong className="font-semibold">6-Month Inactivity & Course Re-activation:</strong> Students who passed 6 calendar months from approval are categorized as Inactive. All historical payments and previous metrics are permanently preserved. Click <strong>"Re-activate with New Course ↻"</strong> to enroll them in a new package with fresh 6-month validity while keeping cumulative financial records.
+                  </div>
+                </div>
+
+                {/* Search in Inactive Students */}
+                <div className="relative">
+                  <div className="flex items-center gap-2.5 bg-[#f0f0f0] px-4 py-2.5 rounded-full border border-transparent focus-within:border-[#141414] transition-colors">
+                    <svg className="w-4 h-4 text-[#707070] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search inactive students by Name or Mobile No (+91)..."
+                      className="w-full bg-transparent text-[13px] text-[#141414] placeholder-[#707070] outline-none"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="text-[11px] text-[#707070] hover:text-[#141414] cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {filteredInactiveStudents.length > 0 ? (
+                  <div className="space-y-3">
+                    {filteredInactiveStudents.map((stu) => {
+                      const approvalDate = stu.approvedDate
+                        ? new Date(stu.approvedDate)
+                        : stu.registrationDate
+                        ? new Date(stu.registrationDate)
+                        : null;
+
+                      return (
+                        <div
+                          key={stu.phone}
+                          className="p-4 sm:p-5 rounded-[20px] bg-[#fafafa] border border-[#e5e5e5] flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-[#d4d4d4]"
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span className="font-bold text-[16px] text-[#141414]">{stu.name}</span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
+                                ⏳ VALIDITY EXPIRED (&gt;6 MOS)
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-[#f0f0f0] text-[#141414] text-[11px] font-semibold">
+                                {stu.vehicleType}
+                              </span>
+                            </div>
+
+                            <div className="text-[12px] text-[#707070] flex items-center gap-3 flex-wrap">
+                              <span>📞 {stu.phone}</span>
+                              <span>·</span>
+                              <span>Past Course: {stu.coursePackage}</span>
+                              <span>·</span>
+                              <span>Instructor: {stu.assignedInstructor}</span>
+                              {approvalDate && (
+                                <>
+                                  <span>·</span>
+                                  <span>Approved: {approvalDate.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}</span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="text-[12px] text-[#707070]">
+                              Past Progress: {stu.vehicleType === "4-Wheeler" ? `${stu.completedKm}/${stu.targetKm} km` : `${stu.completedDays || 0}/15 days`} · Total Paid to date: ₹{stu.totalPaid.toLocaleString("en-IN")}.00 / Total Fee: ₹{stu.totalCourseFee.toLocaleString("en-IN")}.00
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#f0f0f0]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedStudent(stu);
+                                const el = document.getElementById("admin-student-details");
+                                if (el) el.scrollIntoView({ behavior: "smooth" });
+                              }}
+                              className="px-3.5 py-2 rounded-full bg-white hover:bg-[#f5f5f5] text-[#141414] text-[12px] font-semibold border border-[#e0e0e0] transition-all cursor-pointer shadow-sm"
+                            >
+                              Inspect Details
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setReenrollModalStudent(stu)}
+                              className="px-4 py-2 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                            >
+                              <span>↻</span>
+                              <span>Re-activate with New Course</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-12 text-center rounded-[20px] bg-[#f9f9f9] border border-[#ececec] space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-[#f0f0f0] text-[#707070] flex items-center justify-center mx-auto text-[20px]">
+                      ✓
+                    </div>
+                    <div className="text-[14px] font-semibold text-[#141414]">No Inactive Students</div>
+                    <p className="text-[12px] text-[#707070] max-w-sm mx-auto">
+                      {searchQuery
+                        ? `No inactive students match "${searchQuery}".`
+                        : "All currently enrolled students are within their active 6-month course window."}
+                    </p>
+                  </div>
+                )}
+              </div>
             ) : activeTab === "pending" ? (
               /* ─── PENDING OWNER APPROVAL QUEUE (With Dropdown Filter) ─── */
               <div className="space-y-3 pt-1">
@@ -1272,6 +1453,33 @@ function AdminDashboardContent() {
               ═══════════════════════════════════════════════════════ */}
           {selectedStudent && (
             <div id="admin-student-details" className="space-y-6 pt-2">
+              {/* Inactive Student Notice Banner */}
+              {isStudentInactive(selectedStudent) && (
+                <div className="bg-amber-50 border border-amber-300 rounded-[20px] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <span className="text-[20px] leading-none">⏳</span>
+                    <div>
+                      <div className="font-bold text-[14px]">
+                        Inactive Student Record (&gt;6 Calendar Months Validity Expired)
+                      </div>
+                      <div className="text-[12px] text-amber-850 mt-0.5">
+                        This student's original 6-month validity window has expired. All past payment receipts and historical progress are permanently preserved.
+                      </div>
+                    </div>
+                  </div>
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => setReenrollModalStudent(selectedStudent)}
+                      className="px-4 py-2 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm"
+                    >
+                      <span>↻</span>
+                      <span>Re-activate with New Course</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Card 1: Adaptive Training Progress (4W Km vs 2W 15 Days vs License-Only) */}
               {selectedStudent.vehicleType === "4-Wheeler" ? (
                 /* ─── 4-WHEELER PRACTICAL TRAINING (80 KM / 120 KM) ─── */
@@ -1885,6 +2093,71 @@ function AdminDashboardContent() {
                   )}
                 </div>
               </div>
+
+              {/* Card 3: Previous Course History (if any archived courses exist) */}
+              {selectedStudent.courseHistory && selectedStudent.courseHistory.length > 0 && (
+                <div className="bg-[#ffffff] border border-[#f0f0f0] rounded-[24px] p-6 sm:p-8 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#f0f0f0]">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-[#141414]"></span>
+                      <h3 className="text-[18px] font-bold text-[#141414] tracking-tight">
+                        Previous Course History ({selectedStudent.courseHistory.length})
+                      </h3>
+                    </div>
+                    <span className="text-[11px] text-[#707070]">Lifetime Course Archives</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedStudent.courseHistory.map((hist, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-[#fafafa] border border-[#e5e5e5] rounded-[18px] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[13px]"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-[#141414] text-[14px]">
+                              {hist.coursePackage}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-[#f0f0f0] text-[#141414] text-[10px] font-semibold">
+                              {hist.vehicleType}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-200">
+                              {hist.trainingType || "Standard"}
+                            </span>
+                          </div>
+
+                          <div className="text-[12px] text-[#707070] flex items-center gap-3 flex-wrap">
+                            <span>Instructor: {hist.assignedInstructor || "SafeDrive Trainer"}</span>
+                            <span>·</span>
+                            <span>Fee: ₹{(hist.fee || 0).toLocaleString("en-IN")}.00</span>
+                            {hist.enrolledDate && (
+                              <>
+                                <span>·</span>
+                                <span>Enrolled: {hist.enrolledDate}</span>
+                              </>
+                            )}
+                            {hist.completedDate && (
+                              <>
+                                <span>·</span>
+                                <span>Completed/Archived: {hist.completedDate}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 text-right sm:text-right">
+                          <div className="text-[13px] font-bold text-[#141414]">
+                            {hist.vehicleType === "4-Wheeler"
+                              ? `${hist.completedKm || 0} / ${hist.targetKm || 0} km driven`
+                              : `${hist.completedDays || 0} / ${hist.totalDays || 15} days`}
+                          </div>
+                          <div className="text-[10px] text-[#707070]">Course Metrics Preserved</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1909,6 +2182,13 @@ function AdminDashboardContent() {
       <ReceiptModal
         receiptData={receiptModalData}
         onClose={() => setReceiptModalData(null)}
+      />
+
+      <ReenrollModal
+        isOpen={!!reenrollModalStudent}
+        student={reenrollModalStudent}
+        onClose={() => setReenrollModalStudent(null)}
+        onStudentReenrolled={handleStudentReenrolled}
       />
 
       {/* ─── CUSTOM DATE RANGE FILTER MODAL ─── */}

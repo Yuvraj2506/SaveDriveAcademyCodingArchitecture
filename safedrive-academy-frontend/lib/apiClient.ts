@@ -293,14 +293,30 @@ function mapToCleanStudentData(item: any): CleanStudentData {
     assignedInstructor: item.AssignedInstructor || item.assignedInstructor || "Staff Trainer",
     status: (item.Status || item.status || "active").toLowerCase(),
     registrationDate: item.RequestedDate || item.ApprovedDate || item.registrationDate,
+    approvedDate: item.ApprovedDate || item.approvedDate,
     dueDateNote: remDue > 0 ? `Remaining ₹${remDue.toLocaleString("en-IN")} due before final test.` : "Fully paid.",
     payments: (item.Payments || item.payments || []).map((p: any) => ({
       receiptNumber: p.ReceiptNumber || p.receiptNumber || "REC-001",
       date: p.Date || p.date || "",
       method: p.Method || p.method || "UPI",
       amount: p.Amount ?? p.amount ?? 0,
-      recordedBy: p.RecordedBy || p.recordedBy || "Staff Member"
+      recordedBy: p.RecordedBy || p.recordedBy || "Staff Member",
+      referenceNote: p.ReferenceNote || p.referenceNote || ""
     })),
+    courseHistory: (item.CourseHistory || item.courseHistory || []).map((ch: any) => ({
+      coursePackage: ch.CoursePackage || ch.coursePackage || "",
+      vehicleType: ch.VehicleType || ch.vehicleType || "4-Wheeler",
+      trainingType: ch.TrainingType || ch.trainingType || "4w_personal",
+      targetKm: ch.TargetKm ?? ch.targetKm ?? 0,
+      completedKm: ch.CompletedKm ?? ch.completedKm ?? 0,
+      totalDays: ch.TotalDays ?? ch.totalDays ?? 0,
+      completedDays: ch.CompletedDays ?? ch.completedDays ?? 0,
+      fee: ch.Fee ?? ch.fee ?? 0,
+      enrolledDate: ch.EnrolledDate || ch.enrolledDate || "",
+      completedDate: ch.CompletedDate || ch.completedDate || "",
+      assignedInstructor: ch.AssignedInstructor || ch.assignedInstructor || ""
+    })),
+    isInactive: item.IsInactive ?? item.isInactive ?? false,
     isDeleted: item.IsDeleted ?? item.isDeleted ?? false,
     deletedAt: item.DeletedAt || item.deletedAt || undefined,
   };
@@ -717,6 +733,25 @@ export const apiClient = {
       const result: ApiResponseEnvelope<any> = await response.json();
       if (!response.ok || !result.Success || !result.Data) {
         throw new Error(result.Message || "Failed to restore student.");
+      }
+      return mapToCleanStudentData(result.Data);
+    } catch (err) {
+      throw new Error(formatFriendlyError(err));
+    }
+  },
+
+  async reenrollStudent(idOrPhone: string, payload: any): Promise<CleanStudentData> {
+    try {
+      const response = await authenticatedFetch(
+        `${BACKEND_URL}/api/owner/students/${encodeURIComponent(idOrPhone)}/re-enroll`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+      const result: ApiResponseEnvelope<any> = await response.json();
+      if (!response.ok || !result.Success || !result.Data) {
+        throw new Error(result.Message || "Failed to re-enroll student.");
       }
       return mapToCleanStudentData(result.Data);
     } catch (err) {

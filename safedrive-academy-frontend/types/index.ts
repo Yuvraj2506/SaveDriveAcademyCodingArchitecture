@@ -18,8 +18,23 @@ export interface CleanPaymentRecord {
   method: PaymentMethod;
   amount: number;
   note?: string;
+  referenceNote?: string;
   recordedBy?: string;
   receivedBy?: string;
+}
+
+export interface CleanCourseHistory {
+  coursePackage: string;
+  vehicleType: string;
+  trainingType: string;
+  targetKm: number;
+  completedKm: number;
+  totalDays: number;
+  completedDays: number;
+  fee: number;
+  enrolledDate: string;
+  completedDate: string;
+  assignedInstructor?: string;
 }
 
 export interface CleanStudentData {
@@ -41,8 +56,11 @@ export interface CleanStudentData {
   assignedInstructor: string;
   status: "active" | "completed" | "paused" | string;
   registrationDate?: string;
+  approvedDate?: string;
   dueDateNote?: string;
   payments: CleanPaymentRecord[];
+  courseHistory?: CleanCourseHistory[];
+  isInactive?: boolean;
   isDeleted?: boolean;
   deletedAt?: string;
 }
