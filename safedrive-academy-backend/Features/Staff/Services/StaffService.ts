@@ -60,7 +60,8 @@ export class StaffService {
               Date: today,
               Method: request.PaymentMethod || "UPI",
               Amount: request.TotalPaid,
-              RecordedBy: staffName
+              RecordedBy: staffName,
+              ReferenceNote: request.ReferenceNote || ""
             }
           ]
         : [];

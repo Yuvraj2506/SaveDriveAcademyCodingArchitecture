@@ -12,4 +12,5 @@ export interface CreateStudentRequestDTO {
   AssignedInstructor: string;
   PaymentMethod: string;
   RequestedBy?: string;
+  ReferenceNote?: string;
 }

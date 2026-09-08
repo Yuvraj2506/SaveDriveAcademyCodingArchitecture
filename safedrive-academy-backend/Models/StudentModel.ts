@@ -12,6 +12,7 @@ export interface IStudentPaymentRecord {
   Method: string;
   Amount: number;
   RecordedBy: string;
+  ReferenceNote?: string;
 }
 
 export interface IStudentDocument extends Document {
@@ -48,7 +49,8 @@ const StudentPaymentSchema: Schema<IStudentPaymentRecord> = new Schema<IStudentP
     Date: { type: String, required: true },
     Method: { type: String, required: true },
     Amount: { type: Number, required: true },
-    RecordedBy: { type: String, required: true }
+    RecordedBy: { type: String, required: true },
+    ReferenceNote: { type: String, default: "" }
   },
   { _id: false }
 );

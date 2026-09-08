@@ -21,7 +21,11 @@ export default function NewPaymentModal({
   const [selectedPhone, setSelectedPhone] = useState<string>("");
   const [amount, setAmount] = useState<number | "">(2000);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("UPI");
-  const [referenceNote, setReferenceNote] = useState<string>("");
+  const [utrNumber, setUtrNumber] = useState<string>("");
+  const [chequeNumber, setChequeNumber] = useState<string>("");
+  const [bankName, setBankName] = useState<string>("");
+  const [cashNote, setCashNote] = useState<string>("");
+  const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submittedInfo, setSubmittedInfo] = useState<{
     name: string;
@@ -44,9 +48,29 @@ export default function NewPaymentModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!currentStudent) return;
+
     const parsedAmount = Number(amount) || 0;
-    if (parsedAmount <= 0) return;
+    if (parsedAmount < 1) {
+      setFormError("Payment amount must be at least ₹1.00.");
+      return;
+    }
+
+    if (paymentMethod === "UPI") {
+      const cleanUtr = utrNumber.trim();
+      if (!/^\d{12}$/.test(cleanUtr)) {
+        setFormError("UPI payments require a valid 12-digit UTR / Transaction ID.");
+        return;
+      }
+    } else if (paymentMethod === "CHEQUE") {
+      const cleanCheque = chequeNumber.trim();
+      if (!/^\d{6}$/.test(cleanCheque)) {
+        setFormError("Cheque payments require a valid 6-digit Cheque Number.");
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -56,6 +80,15 @@ export default function NewPaymentModal({
       day: "numeric",
       year: "numeric",
     });
+
+    let formattedReference = "";
+    if (paymentMethod === "UPI") {
+      formattedReference = `UPI UTR: ${utrNumber.trim()}`;
+    } else if (paymentMethod === "CHEQUE") {
+      formattedReference = `Cheque No: ${chequeNumber.trim()}${bankName.trim() ? ` (${bankName.trim()})` : ""}`;
+    } else {
+      formattedReference = cashNote.trim() || "Cash payment recorded by staff";
+    }
 
     const newRequest: CleanPendingRequest = {
       requestId: newReqId,
@@ -67,7 +100,7 @@ export default function NewPaymentModal({
       paymentMethod,
       amountPaid: parsedAmount,
       amountDue: Math.max(0, currentStudent.remainingDue - parsedAmount),
-      referenceNote: referenceNote.trim() || `${paymentMethod} payment recorded by staff`,
+      referenceNote: formattedReference,
       instructor: currentStudent.assignedInstructor,
       requestedBy: "Staff Desk (Instructor)",
       requestedDate: today,
@@ -85,7 +118,7 @@ export default function NewPaymentModal({
         setSubmittedInfo({
           name: currentStudent.name,
           phone: currentStudent.phone,
-          amount: Number(amount),
+          amount: parsedAmount,
           method: paymentMethod,
         });
         onRequestSubmitted(data.request);
@@ -93,7 +126,7 @@ export default function NewPaymentModal({
         setSubmittedInfo({
           name: currentStudent.name,
           phone: currentStudent.phone,
-          amount: Number(amount),
+          amount: parsedAmount,
           method: paymentMethod,
         });
         onRequestSubmitted(newRequest);
@@ -102,7 +135,7 @@ export default function NewPaymentModal({
       setSubmittedInfo({
         name: currentStudent.name,
         phone: currentStudent.phone,
-        amount: Number(amount),
+        amount: parsedAmount,
         method: paymentMethod,
       });
       onRequestSubmitted(newRequest);
@@ -111,7 +144,11 @@ export default function NewPaymentModal({
     setTimeout(() => {
       setSubmitting(false);
       setSubmittedInfo(null);
-      setReferenceNote("");
+      setUtrNumber("");
+      setChequeNumber("");
+      setBankName("");
+      setCashNote("");
+      setFormError(null);
       onClose();
     }, 1200);
   };
@@ -227,7 +264,10 @@ export default function NewPaymentModal({
                     <button
                       key={m}
                       type="button"
-                      onClick={() => setPaymentMethod(m as any)}
+                      onClick={() => {
+                        setPaymentMethod(m as any);
+                        setFormError(null);
+                      }}
                       className={`py-2 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${
                         paymentMethod === m
                           ? "bg-[#141414] text-white border-[#141414]"
@@ -241,32 +281,118 @@ export default function NewPaymentModal({
               </div>
             </div>
 
-            {/* 3. Reference Note */}
-            <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070] mb-1">
-                Reference / Note (Optional)
-              </label>
-              <input
-                type="text"
-                value={referenceNote}
-                onChange={(e) => setReferenceNote(e.target.value)}
-                placeholder={
-                  paymentMethod === "UPI"
-                    ? "e.g. UPI Ref / UTR: 489201948291"
-                    : paymentMethod === "CHEQUE"
-                    ? "e.g. Cheque No: 409124 - HDFC Bank"
-                    : "e.g. Cash handed to desk instructor"
-                }
-                className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[13px] text-[#141414] focus-ring-mobbin outline-none"
-              />
-            </div>
+            {/* Dynamic Contextual Payment Reference (UTR / Cheque / Cash) */}
+            {paymentMethod === "UPI" ? (
+              <div className="space-y-1 bg-[#fafafa] p-3.5 rounded-[18px] border border-[#e5e5e5]">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#141414]">
+                    UPI 12-Digit UTR Number <span className="text-rose-600">*</span>
+                  </label>
+                  <span
+                    className={`text-[11px] font-mono font-semibold ${
+                      utrNumber.length === 12 ? "text-[#047857]" : "text-[#707070]"
+                    }`}
+                  >
+                    {utrNumber.length}/12 digits
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  required
+                  maxLength={12}
+                  value={utrNumber}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "");
+                    setUtrNumber(val);
+                    if (formError) setFormError(null);
+                  }}
+                  placeholder="e.g. 489201948291 (12 digits)"
+                  className="w-full h-10 px-3.5 rounded-[14px] bg-white border border-[#e0e0e0] text-[13px] font-mono text-[#141414] focus-ring-mobbin outline-none"
+                />
+                {utrNumber.length > 0 && utrNumber.length < 12 && (
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    Enter complete 12-digit UTR number ({12 - utrNumber.length} remaining)
+                  </p>
+                )}
+              </div>
+            ) : paymentMethod === "CHEQUE" ? (
+              <div className="space-y-2 bg-[#fafafa] p-3.5 rounded-[18px] border border-[#e5e5e5]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#141414]">
+                        6-Digit Cheque Number <span className="text-rose-600">*</span>
+                      </label>
+                      <span
+                        className={`text-[11px] font-mono font-semibold ${
+                          chequeNumber.length === 6 ? "text-[#047857]" : "text-[#707070]"
+                        }`}
+                      >
+                        {chequeNumber.length}/6 digits
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      value={chequeNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, "");
+                        setChequeNumber(val);
+                        if (formError) setFormError(null);
+                      }}
+                      placeholder="e.g. 409124 (6 digits)"
+                      className="w-full h-10 px-3.5 rounded-[14px] bg-white border border-[#e0e0e0] text-[13px] font-mono text-[#141414] focus-ring-mobbin outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070]">
+                      Bank & Branch (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      placeholder="e.g. HDFC Bank, Connaught Place"
+                      className="w-full h-10 px-3.5 rounded-[14px] bg-white border border-[#e0e0e0] text-[13px] text-[#141414] focus-ring-mobbin outline-none"
+                    />
+                  </div>
+                </div>
+                {chequeNumber.length > 0 && chequeNumber.length < 6 && (
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    Enter complete 6-digit Cheque number ({6 - chequeNumber.length} remaining)
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1 bg-[#fafafa] p-3.5 rounded-[18px] border border-[#e5e5e5]">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#707070]">
+                  Cash Handover Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={cashNote}
+                  onChange={(e) => setCashNote(e.target.value)}
+                  placeholder="e.g. Cash received directly at desk counter"
+                  className="w-full h-10 px-3.5 rounded-[14px] bg-white border border-[#e0e0e0] text-[13px] text-[#141414] focus-ring-mobbin outline-none"
+                />
+              </div>
+            )}
+
+            {/* Error Banner */}
+            {formError && (
+              <div className="p-3 rounded-[14px] bg-rose-50 border border-rose-200 text-rose-800 text-[12px] font-medium flex items-center gap-2 animate-fade-in">
+                <span>⚠️</span>
+                <span>{formError}</span>
+              </div>
+            )}
 
             {/* Projected Remaining Balance */}
             {currentStudent && (
               <div className="bg-[#f3f3f3] p-3 rounded-[16px] flex items-center justify-between text-[12px] text-[#707070]">
                 <span>Projected Due after Approval:</span>
                 <span className="font-semibold text-[#141414]">
-                  ₹{Math.max(0, currentStudent.remainingDue - Number(amount)).toLocaleString("en-IN")}.00 INR
+                  ₹{Math.max(0, currentStudent.remainingDue - (Number(amount) || 0)).toLocaleString("en-IN")}.00 INR
                 </span>
               </div>
             )}
