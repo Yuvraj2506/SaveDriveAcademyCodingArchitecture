@@ -36,6 +36,8 @@ export interface IStudentDocument extends Document {
   RejectionReason?: string | null;
   Status: StudentRequestStatusEnum;
   Payments: IStudentPaymentRecord[];
+  IsDeleted?: boolean;
+  DeletedAt?: Date | null;
   CreatedAt: Date;
   UpdatedAt: Date;
 }
@@ -154,6 +156,15 @@ const StudentSchema: Schema<IStudentDocument> = new Schema<IStudentDocument>(
     Payments: {
       type: [StudentPaymentSchema],
       default: []
+    },
+    IsDeleted: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    DeletedAt: {
+      type: Date,
+      default: null
     }
   },
   {

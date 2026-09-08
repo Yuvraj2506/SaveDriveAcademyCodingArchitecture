@@ -11,7 +11,7 @@ import NewPaymentModal from "@/components/NewPaymentModal";
 import ReceiptModal from "@/components/ReceiptModal";
 import Footer from "@/components/Footer";
 
-type TimeFilter = "all" | "30d" | "90d" | "180d" | "365d";
+type TimeFilter = "all" | "30d" | "90d" | "180d" | "365d" | "custom";
 
 interface TimeFilterOption {
   id: TimeFilter;
@@ -26,26 +26,61 @@ const TIME_FILTER_OPTIONS: TimeFilterOption[] = [
   { id: "90d", label: "Last 3 Months", shortLabel: "3 Months", days: 90 },
   { id: "180d", label: "Last 6 Months", shortLabel: "6 Months", days: 180 },
   { id: "365d", label: "Last 1 Year", shortLabel: "1 Year", days: 365 },
+  { id: "custom", label: "Custom Date Range", shortLabel: "Custom", days: null },
 ];
 
 function parseFlexibleDate(dateStr?: string): Date | null {
   if (!dateStr || typeof dateStr !== "string") return null;
-  const parsed = new Date(dateStr);
-  if (!isNaN(parsed.getTime())) return parsed;
+  const direct = new Date(dateStr);
+  if (!isNaN(direct.getTime()) && !/^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/.test(dateStr.trim())) {
+    return direct;
+  }
   const parts = dateStr.trim().split(/[-/ ]+/);
   if (parts.length === 3) {
-    const d = parseInt(parts[0], 10);
-    const m = parseInt(parts[1], 10) - 1;
-    const y = parseInt(parts[2], 10);
-    if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
-      const dt = new Date(y, m, d);
-      if (!isNaN(dt.getTime())) return dt;
+    if (parts[0].length === 4) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+        const dt = new Date(y, m, d);
+        if (!isNaN(dt.getTime())) return dt;
+      }
+    } else {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      let y = parseInt(parts[2], 10);
+      if (y < 100) y += 2000;
+      if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+        const dt = new Date(y, m, d);
+        if (!isNaN(dt.getTime())) return dt;
+      }
     }
   }
-  return null;
+  return !isNaN(direct.getTime()) ? direct : null;
 }
 
-function isDateWithinDays(dateStr: string | undefined, days: number | null): boolean {
+function isDateInRange(
+  dateStr: string | undefined,
+  days: number | null,
+  customStart?: string,
+  customEnd?: string
+): boolean {
+  if (customStart || customEnd) {
+    const date = parseFlexibleDate(dateStr);
+    if (!date) return true;
+    if (customStart) {
+      const start = new Date(customStart);
+      start.setHours(0, 0, 0, 0);
+      if (date < start) return false;
+    }
+    if (customEnd) {
+      const end = new Date(customEnd);
+      end.setHours(23, 59, 59, 999);
+      if (date > end) return false;
+    }
+    return true;
+  }
+
   if (days === null) return true;
   const date = parseFlexibleDate(dateStr);
   if (!date) return true;
@@ -65,10 +100,15 @@ function AdminDashboardContent() {
   const [currentKm, setCurrentKm] = useState<number>(0);
   const [currentDays, setCurrentDays] = useState<number>(0);
   const [pendingRequests, setPendingRequests] = useState<CleanPendingRequest[]>([]);
+  const [archivedStudents, setArchivedStudents] = useState<CleanStudentData[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"students" | "pending">("students");
+  const [activeTab, setActiveTab] = useState<"students" | "pending" | "archived">("students");
+  const [pendingFilter, setPendingFilter] = useState<"all" | "new_student" | "new_payment">("all");
+  const [isPendingFilterOpen, setIsPendingFilterOpen] = useState(false);
+  const pendingFilterRef = useRef<HTMLDivElement>(null);
+
   const [newStudentModalOpen, setNewStudentModalOpen] = useState(false);
   const [newPaymentModalOpen, setNewPaymentModalOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -77,15 +117,29 @@ function AdminDashboardContent() {
     payment: CleanPaymentRecord;
   } | null>(null);
 
-  // Time filter state for executive cards
+  // Custom in-app delete modal state & Trash operations
+  const [studentToDelete, setStudentToDelete] = useState<CleanStudentData | null>(null);
+  const [isDeletingStudent, setIsDeletingStudent] = useState<boolean>(false);
+  const [restoringPhone, setRestoringPhone] = useState<string | null>(null);
+  const [permanentDeletingPhone, setPermanentDeletingPhone] = useState<string | null>(null);
+
+  // Time filter & Custom date range state for executive cards
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [isTimeFilterOpen, setIsTimeFilterOpen] = useState(false);
+  const [isCustomDateModalOpen, setIsCustomDateModalOpen] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [tempStartDate, setTempStartDate] = useState("");
+  const [tempEndDate, setTempEndDate] = useState("");
   const timeFilterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (timeFilterRef.current && !timeFilterRef.current.contains(e.target as Node)) {
         setIsTimeFilterOpen(false);
+      }
+      if (pendingFilterRef.current && !pendingFilterRef.current.contains(e.target as Node)) {
+        setIsPendingFilterOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -95,9 +149,10 @@ function AdminDashboardContent() {
   // Load students & pending requests from backend database API
   async function loadData() {
     try {
-      const [students, requests] = await Promise.allSettled([
+      const [students, requests, archived] = await Promise.allSettled([
         apiClient.getStudents(),
         apiClient.getPendingRequests(),
+        apiClient.getArchivedStudents(),
       ]);
 
       if (students.status === "fulfilled" && students.value && students.value.length > 0) {
@@ -120,6 +175,10 @@ function AdminDashboardContent() {
 
       if (requests.status === "fulfilled" && requests.value) {
         setPendingRequests(requests.value);
+      }
+
+      if (archived.status === "fulfilled" && archived.value) {
+        setArchivedStudents(archived.value);
       }
     } catch (err) {
       console.warn("Notice: Initializing admin data loader:", err);
@@ -173,11 +232,7 @@ function AdminDashboardContent() {
     setCurrentKm(newVal);
 
     try {
-      await fetch(`/api/students/${encodeURIComponent(selectedStudent.phone)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completedKm: newVal }),
-      });
+      await apiClient.updateStudentKm(selectedStudent.phone, newVal);
       setStudentsList((prev: CleanStudentData[]) =>
         prev.map((s) => (s.phone === selectedStudent.phone ? { ...s, completedKm: newVal } : s))
       );
@@ -192,11 +247,7 @@ function AdminDashboardContent() {
     setCurrentDays(newDays);
 
     try {
-      await fetch(`/api/students/${encodeURIComponent(selectedStudent.phone)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completedDays: newDays }),
-      });
+      await apiClient.updateStudentDays(selectedStudent.phone, newDays);
       setStudentsList((prev: CleanStudentData[]) =>
         prev.map((s) => (s.phone === selectedStudent.phone ? { ...s, completedDays: newDays } : s))
       );
@@ -206,34 +257,96 @@ function AdminDashboardContent() {
     }
   };
 
-  // Owner Action: Delete Student
-  const handleDeleteStudent = async (studentPhone: string, studentName: string) => {
+  // Owner Action: Prompt Delete Student Modal
+  const promptDeleteStudent = (student: CleanStudentData) => {
+    setStudentToDelete(student);
+  };
+
+  // Owner Action: Confirm & Execute Delete Student via Backend API (30-Day Trash Soft-Delete)
+  const confirmDeleteStudent = async () => {
+    if (!studentToDelete) return;
+    setIsDeletingStudent(true);
+
+    const deletedCopy = { ...studentToDelete };
+
+    try {
+      const success = await apiClient.deleteStudent(studentToDelete.phone);
+      if (success) {
+        // Immediate UI Cleanup: remove student from both active list AND pending approval queue
+        const remaining = studentsList.filter((s) => s.phone !== deletedCopy.phone);
+        setStudentsList(remaining);
+        setPendingRequests((prev) =>
+          prev.filter((r) => r.phone !== deletedCopy.phone && r.id !== deletedCopy.id)
+        );
+
+        if (selectedStudent?.phone === deletedCopy.phone) {
+          setSelectedStudent(remaining[0] || null);
+          if (remaining[0]) {
+            setCurrentKm(remaining[0].completedKm);
+            setCurrentDays(remaining[0].completedDays || 0);
+          }
+        }
+        setStudentToDelete(null);
+
+        setActionMessage(
+          `Student "${deletedCopy.name}" moved to Trash (retained for 30 days).`
+        );
+        setTimeout(() => setActionMessage(null), 5000);
+
+        // Re-sync archived list
+        apiClient.getArchivedStudents().then(setArchivedStudents).catch(console.error);
+      } else {
+        setActionMessage("Failed to delete student from database.");
+        setTimeout(() => setActionMessage(null), 3500);
+      }
+    } catch (err: any) {
+      console.error("Error deleting student:", err);
+      setActionMessage(err.message || "Failed to delete student.");
+      setTimeout(() => setActionMessage(null), 3500);
+    } finally {
+      setIsDeletingStudent(false);
+    }
+  };
+
+  // Owner Action: Restore Student from Trash
+  const handleRestoreStudent = async (studentPhone: string, studentName: string) => {
+    setRestoringPhone(studentPhone);
+    try {
+      await apiClient.restoreStudent(studentPhone);
+      setActionMessage(`Student "${studentName}" restored to active records!`);
+      setTimeout(() => setActionMessage(null), 3500);
+      await loadData();
+    } catch (err: any) {
+      console.error("Error restoring student:", err);
+      setActionMessage(err.message || "Failed to restore student.");
+      setTimeout(() => setActionMessage(null), 3500);
+    } finally {
+      setRestoringPhone(null);
+    }
+  };
+
+  // Owner Action: Permanently Delete Student from Database
+  const handlePermanentlyDeleteStudent = async (studentPhone: string, studentName: string) => {
     if (
       !window.confirm(
-        `Are you sure you want to permanently delete student "${studentName}" (${studentPhone}) from the database?`
+        `Are you sure you want to permanently erase "${studentName}" (${studentPhone}) immediately? This cannot be recovered.`
       )
     ) {
       return;
     }
 
+    setPermanentDeletingPhone(studentPhone);
     try {
-      const res = await fetch(`/api/students/${encodeURIComponent(studentPhone)}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (data.success) {
-        setActionMessage(`Student "${studentName}" deleted from database.`);
-        setTimeout(() => setActionMessage(null), 3000);
-
-        const remaining = studentsList.filter((s) => s.phone !== studentPhone);
-        setStudentsList(remaining);
-        if (selectedStudent?.phone === studentPhone) {
-          setSelectedStudent(remaining[0] || null);
-          if (remaining[0]) setCurrentKm(remaining[0].completedKm);
-        }
-      }
-    } catch (err) {
-      console.error("Error deleting student:", err);
+      await apiClient.permanentlyDeleteStudent(studentPhone);
+      setArchivedStudents((prev) => prev.filter((s) => s.phone !== studentPhone));
+      setActionMessage(`Student "${studentName}" permanently deleted.`);
+      setTimeout(() => setActionMessage(null), 3000);
+    } catch (err: any) {
+      console.error("Error permanently deleting student:", err);
+      setActionMessage(err.message || "Failed to delete permanently.");
+      setTimeout(() => setActionMessage(null), 3500);
+    } finally {
+      setPermanentDeletingPhone(null);
     }
   };
 
@@ -286,17 +399,46 @@ function AdminDashboardContent() {
     );
   });
 
+  const filteredPendingRequests = useMemo(() => {
+    if (pendingFilter === "new_student") {
+      return pendingRequests.filter((r) => r.type !== "new_payment");
+    }
+    if (pendingFilter === "new_payment") {
+      return pendingRequests.filter((r) => r.type === "new_payment");
+    }
+    return pendingRequests;
+  }, [pendingRequests, pendingFilter]);
+
+  const filteredArchivedStudents = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return archivedStudents;
+    return archivedStudents.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.phone.replace(/\D/g, "").includes(q.replace(/\D/g, ""))
+    );
+  }, [archivedStudents, searchQuery]);
+
   // Time-filtered executive metrics for Owner cards
   const activeTimeFilterOption =
     TIME_FILTER_OPTIONS.find((o) => o.id === timeFilter) || TIME_FILTER_OPTIONS[0];
 
   const timeFilteredStudents = useMemo(() => {
-    if (timeFilter === "all" || !activeTimeFilterOption.days) return studentsList;
-    return studentsList.filter((s) => isDateWithinDays(s.registrationDate, activeTimeFilterOption.days));
-  }, [studentsList, timeFilter, activeTimeFilterOption.days]);
+    if (timeFilter === "all") return studentsList;
+    if (timeFilter === "custom") {
+      if (!customStartDate && !customEndDate) return studentsList;
+      return studentsList.filter((s) =>
+        isDateInRange(s.registrationDate, null, customStartDate, customEndDate)
+      );
+    }
+    if (!activeTimeFilterOption.days) return studentsList;
+    return studentsList.filter((s) =>
+      isDateInRange(s.registrationDate, activeTimeFilterOption.days)
+    );
+  }, [studentsList, timeFilter, activeTimeFilterOption.days, customStartDate, customEndDate]);
 
   const timeFilteredRevenue = useMemo(() => {
-    if (timeFilter === "all" || !activeTimeFilterOption.days) {
+    if (timeFilter === "all") {
       return studentsList.reduce((acc, s) => acc + (s.totalPaid || 0), 0);
     }
     let paymentSum = 0;
@@ -304,7 +446,11 @@ function AdminDashboardContent() {
     studentsList.forEach((s) => {
       if (s.payments && s.payments.length > 0) {
         s.payments.forEach((p) => {
-          if (isDateWithinDays(p.date, activeTimeFilterOption.days)) {
+          const match =
+            timeFilter === "custom"
+              ? isDateInRange(p.date, null, customStartDate, customEndDate)
+              : isDateInRange(p.date, activeTimeFilterOption.days);
+          if (match) {
             paymentSum += p.amount || 0;
             foundPayments = true;
           }
@@ -315,7 +461,7 @@ function AdminDashboardContent() {
       return timeFilteredStudents.reduce((acc, s) => acc + (s.totalPaid || 0), 0);
     }
     return paymentSum;
-  }, [studentsList, timeFilteredStudents, timeFilter, activeTimeFilterOption.days]);
+  }, [studentsList, timeFilteredStudents, timeFilter, activeTimeFilterOption.days, customStartDate, customEndDate]);
 
   const timeFilteredPendingDues = useMemo(() => {
     return timeFilteredStudents.reduce((acc, s) => acc + (s.remainingDue || 0), 0);
@@ -441,7 +587,18 @@ function AdminDashboardContent() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     <span>
-                      Period: <strong className="font-bold text-[#141414]">{activeTimeFilterOption.label}</strong>
+                      Period:{" "}
+                      <strong className="font-bold text-[#141414]">
+                        {timeFilter === "custom"
+                          ? customStartDate && customEndDate
+                            ? `${customStartDate} – ${customEndDate}`
+                            : customStartDate
+                            ? `From ${customStartDate}`
+                            : customEndDate
+                            ? `Until ${customEndDate}`
+                            : "Custom Range"
+                          : activeTimeFilterOption.label}
+                      </strong>
                     </span>
                     <motion.svg
                       animate={{ rotate: isTimeFilterOpen ? 180 : 0 }}
@@ -477,8 +634,15 @@ function AdminDashboardContent() {
                               role="option"
                               aria-selected={isSelected}
                               onClick={() => {
-                                setTimeFilter(opt.id);
-                                setIsTimeFilterOpen(false);
+                                if (opt.id === "custom") {
+                                  setTempStartDate(customStartDate);
+                                  setTempEndDate(customEndDate);
+                                  setIsCustomDateModalOpen(true);
+                                  setIsTimeFilterOpen(false);
+                                } else {
+                                  setTimeFilter(opt.id);
+                                  setIsTimeFilterOpen(false);
+                                }
                               }}
                               className={`w-full flex items-center justify-between px-3 py-2 rounded-[14px] text-[13px] font-medium transition-colors text-left cursor-pointer ${
                                 isSelected
@@ -644,11 +808,11 @@ function AdminDashboardContent() {
           )}
 
           {/* ═══════════════════════════════════════════════════════
-              STUDENTS DIRECTORY & SEARCH BAR
+              STUDENTS DIRECTORY, PENDING QUEUE & ARCHIVE TABS
               ═══════════════════════════════════════════════════════ */}
           <div className="bg-[#ffffff] p-5 sm:p-6 rounded-[24px] border border-[#f0f0f0] space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#f0f0f0]">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setActiveTab("students")}
@@ -677,10 +841,31 @@ function AdminDashboardContent() {
                     </span>
                   )}
                 </button>
+
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("archived")}
+                    className={`px-4 py-1.5 rounded-full text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      activeTab === "archived"
+                        ? "bg-[#141414] text-white"
+                        : "bg-[#f3f3f3] text-[#707070] hover:text-[#141414]"
+                    }`}
+                  >
+                    <span>🗑️ Trash / Archived</span>
+                    {archivedStudents.length > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                        activeTab === "archived" ? "bg-white/20 text-white" : "bg-[#e0e0e0] text-[#141414]"
+                      }`}>
+                        {archivedStudents.length}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
 
               <span className="text-[12px] text-[#707070]">
-                {isOwner ? "Owner: Full management & delete access" : "Staff: Click student name to pop details"}
+                {isOwner ? "Owner: Full management, approval & recovery access" : "Staff: Click student name to pop details"}
               </span>
             </div>
 
@@ -696,7 +881,7 @@ function AdminDashboardContent() {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search students by Name or Mobile No (+91)..."
+                      placeholder="Search active students by Name or Mobile No (+91)..."
                       className="w-full bg-transparent text-[13px] text-[#141414] placeholder-[#707070] outline-none"
                     />
                     {searchQuery && (
@@ -761,16 +946,103 @@ function AdminDashboardContent() {
                   </div>
                 </div>
               </>
-            ) : (
-              /* PENDING OWNER APPROVAL QUEUE (New Student + New Payment) */
+            ) : activeTab === "pending" ? (
+              /* ─── PENDING OWNER APPROVAL QUEUE (With Dropdown Filter) ─── */
               <div className="space-y-3 pt-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#707070] block">
-                  Pending Approvals Queue ({pendingRequests.length} requests waiting):
-                </span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-[#707070] block">
+                    Pending Approvals ({filteredPendingRequests.length} showing of {pendingRequests.length} total):
+                  </span>
 
-                {pendingRequests.length > 0 ? (
+                  {/* Pending Queue Category Dropdown Filter */}
+                  <div className="relative" ref={pendingFilterRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsPendingFilterOpen(!isPendingFilterOpen)}
+                      className="px-3.5 py-1.5 rounded-full bg-[#f3f3f3] hover:bg-[#eaeaea] border border-[#e0e0e0] text-[12px] font-semibold text-[#141414] transition-all cursor-pointer flex items-center gap-2 shadow-xs"
+                    >
+                      <svg className="w-3.5 h-3.5 text-[#707070]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                      </svg>
+                      <span>
+                        {pendingFilter === "all"
+                          ? `All Requests (${pendingRequests.length})`
+                          : pendingFilter === "new_student"
+                          ? `New Students (${pendingRequests.filter((r) => r.type !== "new_payment").length})`
+                          : `Fee Payments (${pendingRequests.filter((r) => r.type === "new_payment").length})`}
+                      </span>
+                      <svg
+                        className={`w-3.5 h-3.5 text-[#707070] transition-transform ${
+                          isPendingFilterOpen ? "rotate-180" : ""
+                        }`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {isPendingFilterOpen && (
+                      <div className="absolute right-0 mt-1.5 w-60 bg-white border border-[#e5e5e5] rounded-[18px] shadow-xl p-1.5 z-30 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingFilter("all");
+                            setIsPendingFilterOpen(false);
+                          }}
+                          className={`w-full text-left px-3.5 py-2 rounded-[12px] text-[12px] font-semibold transition-colors flex items-center justify-between cursor-pointer ${
+                            pendingFilter === "all"
+                              ? "bg-[#141414] text-white"
+                              : "hover:bg-[#f3f3f3] text-[#141414]"
+                          }`}
+                        >
+                          <span>All Requests</span>
+                          <span className="text-[11px] opacity-80">{pendingRequests.length}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingFilter("new_student");
+                            setIsPendingFilterOpen(false);
+                          }}
+                          className={`w-full text-left px-3.5 py-2 rounded-[12px] text-[12px] font-semibold transition-colors flex items-center justify-between cursor-pointer ${
+                            pendingFilter === "new_student"
+                              ? "bg-[#141414] text-white"
+                              : "hover:bg-[#f3f3f3] text-[#141414]"
+                          }`}
+                        >
+                          <span>New Student Registrations</span>
+                          <span className="text-[11px] opacity-80">
+                            {pendingRequests.filter((r) => r.type !== "new_payment").length}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingFilter("new_payment");
+                            setIsPendingFilterOpen(false);
+                          }}
+                          className={`w-full text-left px-3.5 py-2 rounded-[12px] text-[12px] font-semibold transition-colors flex items-center justify-between cursor-pointer ${
+                            pendingFilter === "new_payment"
+                              ? "bg-[#141414] text-white"
+                              : "hover:bg-[#f3f3f3] text-[#141414]"
+                          }`}
+                        >
+                          <span>Fee Payment Approvals</span>
+                          <span className="text-[11px] opacity-80">
+                            {pendingRequests.filter((r) => r.type === "new_payment").length}
+                          </span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {filteredPendingRequests.length > 0 ? (
                   <div className="space-y-2.5">
-                    {pendingRequests.map((req) => (
+                    {filteredPendingRequests.map((req) => (
                       <div
                         key={req.requestId}
                         className="p-4 rounded-[16px] bg-[#f3f3f3] border border-[#e0e0e0] flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-[13px]"
@@ -844,8 +1116,151 @@ function AdminDashboardContent() {
                     ))}
                   </div>
                 ) : (
-                  <div className="py-6 text-center text-[13px] text-[#707070] bg-[#f3f3f3] rounded-[16px]">
-                    No pending requests waiting for owner approval.
+                  <div className="py-8 text-center text-[13px] text-[#707070] bg-[#f3f3f3] rounded-[16px] space-y-1">
+                    <p className="font-semibold text-[#141414]">No pending requests found</p>
+                    <p className="text-[12px]">
+                      {pendingFilter === "all"
+                        ? "The approval queue is completely clear."
+                        : `No pending ${pendingFilter === "new_student" ? "new student registration" : "payment approval"} requests.`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ─── TRASH / ARCHIVED STUDENTS (30-Day Recovery Queue) ─── */
+              <div className="space-y-4 pt-1">
+                <div className="bg-amber-50/70 border border-amber-200/80 rounded-[18px] p-4 text-[12px] text-amber-900 flex items-start gap-3">
+                  <span className="text-[18px] leading-none">ℹ️</span>
+                  <div>
+                    <strong className="font-semibold">30-Day Soft Delete & Safe Recovery:</strong> Deleted students are preserved in this Trash archive for 30 days before being automatically purged permanently. You can restore a student back to the active directory or permanently erase their record at any time.
+                  </div>
+                </div>
+
+                {/* Search in Trash */}
+                <div className="relative">
+                  <div className="flex items-center gap-2.5 bg-[#f0f0f0] px-4 py-2.5 rounded-full border border-transparent focus-within:border-[#141414] transition-colors">
+                    <svg className="w-4 h-4 text-[#707070] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search trash by Name or Mobile No (+91)..."
+                      className="w-full bg-transparent text-[13px] text-[#141414] placeholder-[#707070] outline-none"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="text-[11px] text-[#707070] hover:text-[#141414] cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {filteredArchivedStudents.length > 0 ? (
+                  <div className="space-y-3">
+                    {filteredArchivedStudents.map((stu) => {
+                      const deletedDate = stu.deletedAt ? new Date(stu.deletedAt) : new Date();
+                      const daysPassed = Math.floor((Date.now() - deletedDate.getTime()) / (1000 * 60 * 60 * 24));
+                      const daysLeft = Math.max(0, 30 - daysPassed);
+
+                      return (
+                        <div
+                          key={stu.phone}
+                          className="p-4 sm:p-5 rounded-[20px] bg-[#fafafa] border border-[#e5e5e5] flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-[#d4d4d4]"
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span className="font-bold text-[16px] text-[#141414]">{stu.name}</span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
+                                DELETED / ARCHIVED
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-[#f0f0f0] text-[#141414] text-[11px] font-semibold">
+                                {stu.vehicleType}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[11px] font-bold border border-amber-300">
+                                ⏳ {daysLeft} {daysLeft === 1 ? "day" : "days"} until permanent purge
+                              </span>
+                            </div>
+
+                            <div className="text-[12px] text-[#707070] flex items-center gap-3 flex-wrap">
+                              <span>📞 {stu.phone}</span>
+                              <span>·</span>
+                              <span>Course: {stu.coursePackage}</span>
+                              <span>·</span>
+                              <span>Instructor: {stu.assignedInstructor}</span>
+                              <span>·</span>
+                              <span>Deleted: {deletedDate.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}</span>
+                            </div>
+
+                            <div className="text-[12px] text-[#707070]">
+                              Financials at deletion: Paid ₹{stu.totalPaid.toLocaleString("en-IN")}.00 / Total ₹{stu.totalCourseFee.toLocaleString("en-IN")}.00 ({stu.remainingDue > 0 ? `₹${stu.remainingDue.toLocaleString("en-IN")}.00 due` : "Fully Settled"})
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#f0f0f0]">
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreStudent(stu.phone, stu.name)}
+                              disabled={restoringPhone === stu.phone || permanentDeletingPhone === stu.phone}
+                              className="px-4 py-2 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                            >
+                              {restoringPhone === stu.phone ? (
+                                <>
+                                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                  <span>Restoring...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>↺</span>
+                                  <span>Restore Student</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handlePermanentlyDeleteStudent(stu.phone, stu.name)}
+                              disabled={permanentDeletingPhone === stu.phone || restoringPhone === stu.phone}
+                              className="px-3.5 py-2 rounded-full bg-white hover:bg-rose-50 text-rose-700 text-[12px] font-semibold border border-rose-200 transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                            >
+                              {permanentDeletingPhone === stu.phone ? (
+                                <>
+                                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                  <span>Purging...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>✕</span>
+                                  <span>Delete Permanently</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-12 text-center rounded-[20px] bg-[#f9f9f9] border border-[#ececec] space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-[#f0f0f0] text-[#707070] flex items-center justify-center mx-auto text-[20px]">
+                      🗑️
+                    </div>
+                    <div className="text-[14px] font-semibold text-[#141414]">Trash is empty</div>
+                    <p className="text-[12px] text-[#707070] max-w-sm mx-auto">
+                      {searchQuery
+                        ? `No archived students match "${searchQuery}".`
+                        : "No students are currently soft-deleted or archived."}
+                    </p>
                   </div>
                 )}
               </div>
@@ -881,7 +1296,7 @@ function AdminDashboardContent() {
                       {/* Owner Action: Delete Student Button */}
                       {isOwner && (
                         <button
-                          onClick={() => handleDeleteStudent(selectedStudent.phone, selectedStudent.name)}
+                          onClick={() => promptDeleteStudent(selectedStudent)}
                           className="px-3.5 py-2 rounded-[14px] bg-rose-50/80 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                           title="Delete student permanently"
                         >
@@ -1012,7 +1427,7 @@ function AdminDashboardContent() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 self-start sm:self-center">
                       {isOwner && (
                         <button
-                          onClick={() => handleDeleteStudent(selectedStudent.phone, selectedStudent.name)}
+                          onClick={() => promptDeleteStudent(selectedStudent)}
                           className="px-3.5 py-2 rounded-[14px] bg-rose-50/80 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                           title="Delete student permanently"
                         >
@@ -1156,7 +1571,7 @@ function AdminDashboardContent() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 self-start sm:self-center">
                       {isOwner && (
                         <button
-                          onClick={() => handleDeleteStudent(selectedStudent.phone, selectedStudent.name)}
+                          onClick={() => promptDeleteStudent(selectedStudent)}
                           className="px-3.5 py-2 rounded-[14px] bg-rose-50/80 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-[12px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                           title="Delete client permanently"
                         >
@@ -1495,6 +1910,191 @@ function AdminDashboardContent() {
         receiptData={receiptModalData}
         onClose={() => setReceiptModalData(null)}
       />
+
+      {/* ─── CUSTOM DATE RANGE FILTER MODAL ─── */}
+      <AnimatePresence>
+        {isCustomDateModalOpen && (
+          <motion.div
+            key="custom-date-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="custom-date-modal-title"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-md bg-white rounded-[24px] border border-[#e5e5e5] p-6 sm:p-7 shadow-2xl space-y-5"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setIsCustomDateModalOpen(false)}
+                className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#f3f3f3] hover:bg-[#e0e0e0] text-[#141414] flex items-center justify-center transition-colors cursor-pointer"
+                aria-label="Close modal"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <div className="space-y-1">
+                <div className="w-9 h-9 rounded-full bg-[#f3f3f3] text-[#141414] flex items-center justify-center mb-2 text-base">
+                  📅
+                </div>
+                <h3 id="custom-date-modal-title" className="text-[19px] font-bold text-[#141414] tracking-tight">
+                  Custom Date Range Filter
+                </h3>
+                <p className="text-[13px] text-[#707070]">
+                  Filter fee collections, pending dues, and admissions between specific dates.
+                </p>
+              </div>
+
+              <div className="space-y-3.5 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#707070] mb-1.5">
+                    Start Date (From)
+                  </label>
+                  <input
+                    type="date"
+                    value={tempStartDate}
+                    onChange={(e) => setTempStartDate(e.target.value)}
+                    className="w-full h-11 px-3.5 rounded-[16px] bg-[#f5f5f5] border border-[#e5e5e5] text-[14px] font-medium text-[#141414] focus-ring-mobbin outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#707070] mb-1.5">
+                    End Date (To)
+                  </label>
+                  <input
+                    type="date"
+                    value={tempEndDate}
+                    onChange={(e) => setTempEndDate(e.target.value)}
+                    className="w-full h-11 px-3.5 rounded-[16px] bg-[#f5f5f5] border border-[#e5e5e5] text-[14px] font-medium text-[#141414] focus-ring-mobbin outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2.5 pt-3 border-t border-[#f0f0f0]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempStartDate("");
+                    setTempEndDate("");
+                    setCustomStartDate("");
+                    setCustomEndDate("");
+                    setTimeFilter("all");
+                    setIsCustomDateModalOpen(false);
+                  }}
+                  className="px-4 py-2.5 rounded-full bg-[#f3f3f3] hover:bg-[#e8e8e8] text-[#707070] hover:text-[#141414] text-[13px] font-semibold transition-colors cursor-pointer"
+                >
+                  Clear Range
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomDateModalOpen(false)}
+                    className="px-4 py-2.5 rounded-full bg-white border border-[#e0e0e0] hover:bg-[#f9f9f9] text-[#141414] text-[13px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomStartDate(tempStartDate);
+                      setCustomEndDate(tempEndDate);
+                      setTimeFilter("custom");
+                      setIsCustomDateModalOpen(false);
+                    }}
+                    className="px-5 py-2.5 rounded-full bg-[#141414] hover:bg-[#262626] text-white text-[13px] font-semibold transition-all cursor-pointer shadow-sm hover:shadow"
+                  >
+                    Apply Range →
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── IN-APP DELETE STUDENT CONFIRMATION MODAL ─── */}
+      <AnimatePresence>
+        {studentToDelete && (
+          <motion.div
+            key="delete-student-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-student-modal-title"
+            aria-describedby="delete-student-modal-desc"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-md bg-white rounded-[24px] border border-rose-100 p-6 sm:p-7 shadow-2xl space-y-4"
+            >
+              <div className="w-11 h-11 rounded-[16px] bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center text-xl font-bold">
+                <svg className="w-5 h-5 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+
+              <div className="space-y-1">
+                <h3 id="delete-student-modal-title" className="text-[19px] font-bold text-[#141414] tracking-tight">
+                  Delete Student Account?
+                </h3>
+                <p id="delete-student-modal-desc" className="text-[13px] text-[#707070] leading-relaxed">
+                  Are you sure you want to permanently delete{" "}
+                  <strong className="text-[#141414] font-semibold">{studentToDelete.name}</strong>{" "}
+                  (<span>{studentToDelete.phone}</span>)? This will remove all associated driving training records, attendance sessions, and payment history from the database.
+                </p>
+              </div>
+
+              <div className="p-3 bg-rose-50/60 border border-rose-200/70 rounded-[16px] text-[12px] text-rose-800">
+                ⚠️ <strong>Warning:</strong> This action is immediate and cannot be undone.
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#f0f0f0]">
+                <button
+                  type="button"
+                  disabled={isDeletingStudent}
+                  onClick={() => setStudentToDelete(null)}
+                  className="px-4 py-2.5 rounded-full bg-[#f3f3f3] hover:bg-[#e8e8e8] text-[#141414] text-[13px] font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingStudent}
+                  onClick={confirmDeleteStudent}
+                  className="px-5 py-2.5 rounded-full bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-[13px] font-semibold transition-all cursor-pointer shadow-sm hover:shadow flex items-center gap-2"
+                >
+                  {isDeletingStudent ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      <span>Deleting Record...</span>
+                    </>
+                  ) : (
+                    <span>Yes, Delete Student</span>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

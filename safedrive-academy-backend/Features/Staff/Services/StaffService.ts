@@ -91,13 +91,18 @@ export class StaffService {
   }
 
   public async GetStudentRequestsAsync(): Promise<StaffStudentResponseDTO[]> {
-    const students: IStudentDocument[] = await StudentModel.find().sort({ CreatedAt: -1 }).exec();
+    const students: IStudentDocument[] = await StudentModel.find({
+      IsDeleted: { $ne: true }
+    })
+      .sort({ CreatedAt: -1 })
+      .exec();
     return students.map((s) => this.MapToDTO(s));
   }
 
   public async GetApprovedStudentsAsync(): Promise<StaffStudentResponseDTO[]> {
     const students: IStudentDocument[] = await StudentModel.find({
-      Status: StudentRequestStatusEnum.Approved
+      Status: StudentRequestStatusEnum.Approved,
+      IsDeleted: { $ne: true }
     })
       .sort({ CreatedAt: -1 })
       .exec();

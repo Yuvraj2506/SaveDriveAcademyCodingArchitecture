@@ -19,7 +19,7 @@ export default function NewPaymentModal({
   onRequestSubmitted,
 }: NewPaymentModalProps) {
   const [selectedPhone, setSelectedPhone] = useState<string>("");
-  const [amount, setAmount] = useState<number>(2000);
+  const [amount, setAmount] = useState<number | "">(2000);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("UPI");
   const [referenceNote, setReferenceNote] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -45,6 +45,8 @@ export default function NewPaymentModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentStudent) return;
+    const parsedAmount = Number(amount) || 0;
+    if (parsedAmount <= 0) return;
     setSubmitting(true);
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -63,8 +65,8 @@ export default function NewPaymentModal({
       course: currentStudent.vehicleType,
       categoryOption: currentStudent.coursePackage,
       paymentMethod,
-      amountPaid: Number(amount),
-      amountDue: Math.max(0, currentStudent.remainingDue - Number(amount)),
+      amountPaid: parsedAmount,
+      amountDue: Math.max(0, currentStudent.remainingDue - parsedAmount),
       referenceNote: referenceNote.trim() || `${paymentMethod} payment recorded by staff`,
       instructor: currentStudent.assignedInstructor,
       requestedBy: "Staff Desk (Instructor)",
@@ -206,8 +208,11 @@ export default function NewPaymentModal({
                   required
                   min={1}
                   value={amount}
-                  onChange={(e) => setAmount(Number(e.target.value))}
-                  placeholder="2000"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAmount(val === "" ? "" : Number(val));
+                  }}
+                  placeholder="0"
                   className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
                 />
               </div>

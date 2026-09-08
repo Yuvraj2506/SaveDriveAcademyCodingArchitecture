@@ -51,8 +51,8 @@ export default function NewStudentModal({
   const [phone, setPhone] = useState("+91 ");
   const [mainCategory, setMainCategory] = useState<MainCategory>("4-Wheeler Training (With License)");
   const [subOption, setSubOption] = useState<string>("Personal Training (120 km Target)");
-  const [amountPaid, setAmountPaid] = useState<number>(5000);
-  const [amountDue, setAmountDue] = useState<number>(4500);
+  const [amountPaid, setAmountPaid] = useState<number | "">(5000);
+  const [amountDue, setAmountDue] = useState<number | "">(4500);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("UPI");
   const [instructor, setInstructor] = useState("Rajesh Kumar");
   const [submitting, setSubmitting] = useState(false);
@@ -123,8 +123,8 @@ export default function NewStudentModal({
       subOption,
       categoryOption: fullPackageName,
       paymentMethod,
-      amountPaid: Number(amountPaid),
-      amountDue: Number(amountDue),
+      amountPaid: Number(amountPaid) || 0,
+      amountDue: Number(amountDue) || 0,
       referenceNote: `Registration advance paid via ${paymentMethod} (${fullPackageName})`,
       instructor: derivedCourse === "License-Only" ? "RTO Documentation Desk" : instructor,
       requestedBy: "Staff Desk (Instructor)",
@@ -303,11 +303,13 @@ export default function NewStudentModal({
                 </label>
                 <input
                   type="number"
-                  required
                   min={0}
                   value={amountPaid}
-                  onChange={(e) => setAmountPaid(Number(e.target.value))}
-                  placeholder="4000"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAmountPaid(val === "" ? "" : Number(val));
+                  }}
+                  placeholder="0"
                   className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
                 />
               </div>
@@ -318,11 +320,13 @@ export default function NewStudentModal({
                 </label>
                 <input
                   type="number"
-                  required
                   min={0}
                   value={amountDue}
-                  onChange={(e) => setAmountDue(Number(e.target.value))}
-                  placeholder="4500"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAmountDue(val === "" ? "" : Number(val));
+                  }}
+                  placeholder="0"
                   className="w-full h-10 px-3.5 rounded-[16px] bg-[#f0f0f0] text-[14px] text-[#141414] focus-ring-mobbin outline-none"
                 />
               </div>

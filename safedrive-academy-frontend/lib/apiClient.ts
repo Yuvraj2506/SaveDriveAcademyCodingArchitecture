@@ -300,7 +300,9 @@ function mapToCleanStudentData(item: any): CleanStudentData {
       method: p.Method || p.method || "UPI",
       amount: p.Amount ?? p.amount ?? 0,
       recordedBy: p.RecordedBy || p.recordedBy || "Staff Member"
-    }))
+    })),
+    isDeleted: item.IsDeleted ?? item.isDeleted ?? false,
+    deletedAt: item.DeletedAt || item.deletedAt || undefined,
   };
 }
 
@@ -678,6 +680,54 @@ export const apiClient = {
     try {
       const response = await authenticatedFetch(
         `${BACKEND_URL}/api/owner/students/${encodeURIComponent(idOrPhone)}`,
+        {
+          method: "DELETE",
+        }
+      );
+      const result: ApiResponseEnvelope<null> = await response.json();
+      return !!result.Success;
+    } catch (err) {
+      throw new Error(formatFriendlyError(err));
+    }
+  },
+
+  async getArchivedStudents(): Promise<CleanStudentData[]> {
+    try {
+      const response = await authenticatedFetch(`${BACKEND_URL}/api/owner/students/archived`, {
+        method: "GET",
+      });
+      const result: ApiResponseEnvelope<any[]> = await response.json();
+      if (!response.ok || !result.Success) {
+        throw new Error(result.Message || "Failed to fetch archived students.");
+      }
+      return (result.Data || []).map(mapToCleanStudentData);
+    } catch (err) {
+      throw new Error(formatFriendlyError(err));
+    }
+  },
+
+  async restoreStudent(idOrPhone: string): Promise<CleanStudentData> {
+    try {
+      const response = await authenticatedFetch(
+        `${BACKEND_URL}/api/owner/students/${encodeURIComponent(idOrPhone)}/restore`,
+        {
+          method: "POST",
+        }
+      );
+      const result: ApiResponseEnvelope<any> = await response.json();
+      if (!response.ok || !result.Success || !result.Data) {
+        throw new Error(result.Message || "Failed to restore student.");
+      }
+      return mapToCleanStudentData(result.Data);
+    } catch (err) {
+      throw new Error(formatFriendlyError(err));
+    }
+  },
+
+  async permanentlyDeleteStudent(idOrPhone: string): Promise<boolean> {
+    try {
+      const response = await authenticatedFetch(
+        `${BACKEND_URL}/api/owner/students/${encodeURIComponent(idOrPhone)}/permanent`,
         {
           method: "DELETE",
         }

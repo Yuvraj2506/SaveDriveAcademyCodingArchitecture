@@ -38,7 +38,9 @@ export class OwnerService {
       ApprovedDate: student.ApprovedDate,
       RejectionReason: student.RejectionReason,
       Status: student.Status,
-      Payments: student.Payments || []
+      Payments: student.Payments || [],
+      IsDeleted: student.IsDeleted || false,
+      DeletedAt: student.DeletedAt || null
     };
   }
 
@@ -49,7 +51,11 @@ export class OwnerService {
   }
 
   public async GetAllStudentRequestsAsync(): Promise<OwnerStudentResponseDTO[]> {
-    const requests: IStudentDocument[] = await StudentModel.find().sort({ CreatedAt: -1 }).exec();
+    const requests: IStudentDocument[] = await StudentModel.find({
+      IsDeleted: { $ne: true }
+    })
+      .sort({ CreatedAt: -1 })
+      .exec();
     return requests.map((r) => this.MapToDTO(r));
   }
 
@@ -57,7 +63,10 @@ export class OwnerService {
     idOrPhone: string,
     ownerName: string = "Owner Administrator"
   ): Promise<OwnerStudentResponseDTO> {
-    const student: IStudentDocument | null = await StudentModel.findOne(this.GetQuery(idOrPhone)).exec();
+    const student: IStudentDocument | null = await StudentModel.findOne({
+      ...this.GetQuery(idOrPhone),
+      IsDeleted: { $ne: true }
+    }).exec();
 
     if (!student) {
       throw new NotFoundCException(OwnerConstant.STUDENT_NOT_FOUND);
@@ -82,7 +91,10 @@ export class OwnerService {
     idOrPhone: string,
     request?: RejectStudentRequestDTO
   ): Promise<OwnerStudentResponseDTO> {
-    const student: IStudentDocument | null = await StudentModel.findOne(this.GetQuery(idOrPhone)).exec();
+    const student: IStudentDocument | null = await StudentModel.findOne({
+      ...this.GetQuery(idOrPhone),
+      IsDeleted: { $ne: true }
+    }).exec();
 
     if (!student) {
       throw new NotFoundCException(OwnerConstant.STUDENT_NOT_FOUND);
@@ -97,7 +109,8 @@ export class OwnerService {
 
   public async GetAllStudentsAsync(): Promise<OwnerStudentResponseDTO[]> {
     const students: IStudentDocument[] = await StudentModel.find({
-      Status: StudentRequestStatusEnum.Approved
+      Status: StudentRequestStatusEnum.Approved,
+      IsDeleted: { $ne: true }
     })
       .sort({ CreatedAt: -1 })
       .exec();
@@ -109,7 +122,10 @@ export class OwnerService {
     idOrPhone: string,
     updates: UpdateStudentTargetDTO
   ): Promise<OwnerStudentResponseDTO> {
-    const student: IStudentDocument | null = await StudentModel.findOne(this.GetQuery(idOrPhone)).exec();
+    const student: IStudentDocument | null = await StudentModel.findOne({
+      ...this.GetQuery(idOrPhone),
+      IsDeleted: { $ne: true }
+    }).exec();
 
     if (!student) {
       throw new NotFoundCException(OwnerConstant.STUDENT_NOT_FOUND);
@@ -126,13 +142,86 @@ export class OwnerService {
 
   public async DeleteStudentAsync(idOrPhone: string): Promise<boolean> {
     const query = this.GetQuery(idOrPhone);
-    const student: IStudentDocument | null = await StudentModel.findOneAndDelete(query).exec();
+    const now = new Date();
 
-    if (student) {
-      await UserModel.findOneAndDelete({ PhoneNumber: student.PhoneNumber }).exec();
-      return true;
+    const student: IStudentDocument | null = await StudentModel.findOne(query).exec();
+    if (!student) {
+      return false;
     }
 
-    return false;
+    // Soft delete all student records and requests associated with this phone
+    await StudentModel.updateMany(
+      { PhoneNumber: student.PhoneNumber },
+      { $set: { IsDeleted: true, DeletedAt: now } }
+    ).exec();
+
+    // Deactivate user login
+    await UserModel.updateMany(
+      { PhoneNumber: student.PhoneNumber },
+      { $set: { IsActive: false } }
+    ).exec();
+
+    return true;
+  }
+
+  public async GetArchivedStudentsAsync(): Promise<OwnerStudentResponseDTO[]> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Auto purge records older than 30 days
+    const expiredStudents = await StudentModel.find({
+      IsDeleted: true,
+      DeletedAt: { $lt: thirtyDaysAgo }
+    }).exec();
+
+    if (expiredStudents.length > 0) {
+      const expiredPhones = expiredStudents.map((s) => s.PhoneNumber);
+      await StudentModel.deleteMany({ PhoneNumber: { $in: expiredPhones }, IsDeleted: true }).exec();
+      await UserModel.deleteMany({ PhoneNumber: { $in: expiredPhones } }).exec();
+    }
+
+    const archived: IStudentDocument[] = await StudentModel.find({
+      IsDeleted: true
+    })
+      .sort({ DeletedAt: -1 })
+      .exec();
+
+    return archived.map((s) => this.MapToDTO(s));
+  }
+
+  public async RestoreStudentAsync(idOrPhone: string): Promise<OwnerStudentResponseDTO> {
+    const query = this.GetQuery(idOrPhone);
+
+    const student: IStudentDocument | null = await StudentModel.findOne(query).exec();
+    if (!student) {
+      throw new NotFoundCException(OwnerConstant.STUDENT_NOT_FOUND);
+    }
+
+    // Restore all student records and requests associated with this phone
+    await StudentModel.updateMany(
+      { PhoneNumber: student.PhoneNumber },
+      { $set: { IsDeleted: false, DeletedAt: null } }
+    ).exec();
+
+    // Reactivate user login
+    await UserModel.updateMany(
+      { PhoneNumber: student.PhoneNumber },
+      { $set: { IsActive: true } }
+    ).exec();
+
+    const updated = await StudentModel.findOne(query).exec();
+    return this.MapToDTO(updated || student);
+  }
+
+  public async PermanentlyDeleteStudentAsync(idOrPhone: string): Promise<boolean> {
+    const query = this.GetQuery(idOrPhone);
+    const student = await StudentModel.findOne(query).exec();
+    if (!student) {
+      return false;
+    }
+
+    await StudentModel.deleteMany({ PhoneNumber: student.PhoneNumber }).exec();
+    await UserModel.deleteMany({ PhoneNumber: student.PhoneNumber }).exec();
+    return true;
   }
 }

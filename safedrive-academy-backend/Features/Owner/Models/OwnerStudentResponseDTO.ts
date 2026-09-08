@@ -27,4 +27,6 @@ export interface OwnerStudentResponseDTO {
     Amount: number;
     RecordedBy: string;
   }>;
+  IsDeleted?: boolean;
+  DeletedAt?: string | Date | null;
 }

@@ -43,6 +43,8 @@ export interface CleanStudentData {
   registrationDate?: string;
   dueDateNote?: string;
   payments: CleanPaymentRecord[];
+  isDeleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface CleanPendingRequest {
