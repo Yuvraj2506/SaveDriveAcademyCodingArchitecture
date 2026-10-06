@@ -8,6 +8,10 @@ class OwnerConstant {
     static ALL_STUDENTS_FETCHED = "All student records fetched successfully.";
     static STUDENT_UPDATED = "Student record updated successfully.";
     static STUDENT_DELETED = "Student record deleted successfully.";
+    static STUDENT_RESTORED = "Student record restored successfully.";
+    static STUDENT_REENROLLED = "Student re-enrolled into new course package successfully.";
+    static STUDENT_PERMANENTLY_DELETED = "Student record permanently deleted from database.";
+    static ARCHIVED_STUDENTS_FETCHED = "Archived student records fetched successfully.";
     static STUDENT_NOT_FOUND = "Student record not found.";
     static REQUEST_ALREADY_PROCESSED = "This student request has already been processed.";
     static REQUEST_BODY_EMPTY = "Request body cannot be empty.";

@@ -27,6 +27,10 @@ class OwnerController {
         this._router.get("/student-requests", this.GetAllStudentRequests.bind(this));
         this._router.post("/student-requests/:id/approve", this.ApproveStudentRequest.bind(this));
         this._router.post("/student-requests/:id/reject", this.RejectStudentRequest.bind(this));
+        this._router.get("/students/archived", this.GetArchivedStudents.bind(this));
+        this._router.post("/students/:id/restore", this.RestoreStudent.bind(this));
+        this._router.delete("/students/:id/permanent", this.PermanentlyDeleteStudent.bind(this));
+        this._router.post("/students/:id/re-enroll", this.ReenrollStudent.bind(this));
         this._router.get("/students", this.GetAllStudents.bind(this));
         this._router.patch("/students/:id", this.UpdateStudentTarget.bind(this));
         this._router.delete("/students/:id", this.DeleteStudent.bind(this));
@@ -107,6 +111,58 @@ class OwnerController {
         }
         catch (error) {
             this.HandleError(res, error, "DeleteStudent");
+        }
+    }
+    async GetArchivedStudents(req, res) {
+        try {
+            const response = await OwnerService_1.OwnerService.Current.GetArchivedStudentsAsync();
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(response, OwnerConstant_1.OwnerConstant.ARCHIVED_STUDENTS_FETCHED, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "GetArchivedStudents");
+        }
+    }
+    async RestoreStudent(req, res) {
+        try {
+            const id = String(req.params.id);
+            const response = await OwnerService_1.OwnerService.Current.RestoreStudentAsync(id);
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(response, OwnerConstant_1.OwnerConstant.STUDENT_RESTORED, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "RestoreStudent");
+        }
+    }
+    async ReenrollStudent(req, res) {
+        try {
+            const id = String(req.params.id);
+            const payload = req.body;
+            const ownerName = req.body?.ApprovedBy || "Yuvraj Gupta (Owner)";
+            const response = await OwnerService_1.OwnerService.Current.ReenrollStudentAsync(id, payload, ownerName);
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(response, OwnerConstant_1.OwnerConstant.STUDENT_REENROLLED, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "ReenrollStudent");
+        }
+    }
+    async PermanentlyDeleteStudent(req, res) {
+        try {
+            const id = String(req.params.id);
+            const success = await OwnerService_1.OwnerService.Current.PermanentlyDeleteStudentAsync(id);
+            if (!success) {
+                throw new NotFoundCException_1.NotFoundCException(OwnerConstant_1.OwnerConstant.STUDENT_NOT_FOUND);
+            }
+            res
+                .status(200)
+                .json(ApiResponseClass_1.ApiResponseClass.Succeeded(true, OwnerConstant_1.OwnerConstant.STUDENT_PERMANENTLY_DELETED, 200));
+        }
+        catch (error) {
+            this.HandleError(res, error, "PermanentlyDeleteStudent");
         }
     }
     HandleError(res, error, contextName) {

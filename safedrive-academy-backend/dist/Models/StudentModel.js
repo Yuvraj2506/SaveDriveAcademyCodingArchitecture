@@ -41,12 +41,26 @@ var StudentRequestStatusEnum;
     StudentRequestStatusEnum["Approved"] = "Approved";
     StudentRequestStatusEnum["Rejected"] = "Rejected";
 })(StudentRequestStatusEnum || (exports.StudentRequestStatusEnum = StudentRequestStatusEnum = {}));
+const CourseHistorySchema = new mongoose_1.Schema({
+    CoursePackage: { type: String, required: true },
+    VehicleType: { type: String, required: true },
+    TrainingType: { type: String, required: true },
+    TargetKm: { type: Number, default: 0 },
+    CompletedKm: { type: Number, default: 0 },
+    TotalDays: { type: Number, default: 0 },
+    CompletedDays: { type: Number, default: 0 },
+    Fee: { type: Number, default: 0 },
+    EnrolledDate: { type: String, required: true },
+    CompletedDate: { type: String, required: true },
+    AssignedInstructor: { type: String, default: "" }
+}, { _id: false });
 const StudentPaymentSchema = new mongoose_1.Schema({
     ReceiptNumber: { type: String, required: true },
     Date: { type: String, required: true },
     Method: { type: String, required: true },
     Amount: { type: Number, required: true },
-    RecordedBy: { type: String, required: true }
+    RecordedBy: { type: String, required: true },
+    ReferenceNote: { type: String, default: "" }
 }, { _id: false });
 const StudentSchema = new mongoose_1.Schema({
     Name: {
@@ -150,6 +164,24 @@ const StudentSchema = new mongoose_1.Schema({
     Payments: {
         type: [StudentPaymentSchema],
         default: []
+    },
+    CourseHistory: {
+        type: [CourseHistorySchema],
+        default: []
+    },
+    IsInactive: {
+        type: Boolean,
+        default: false,
+        index: true
+    },
+    IsDeleted: {
+        type: Boolean,
+        default: false,
+        index: true
+    },
+    DeletedAt: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: {

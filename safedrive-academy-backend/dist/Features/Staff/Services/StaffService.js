@@ -50,7 +50,8 @@ class StaffService {
                     Date: today,
                     Method: request.PaymentMethod || "UPI",
                     Amount: request.TotalPaid,
-                    RecordedBy: staffName
+                    RecordedBy: staffName,
+                    ReferenceNote: request.ReferenceNote || ""
                 }
             ]
             : [];
@@ -78,12 +79,17 @@ class StaffService {
         return this.MapToDTO(student);
     }
     async GetStudentRequestsAsync() {
-        const students = await StudentModel_1.StudentModel.find().sort({ CreatedAt: -1 }).exec();
+        const students = await StudentModel_1.StudentModel.find({
+            IsDeleted: { $ne: true }
+        })
+            .sort({ CreatedAt: -1 })
+            .exec();
         return students.map((s) => this.MapToDTO(s));
     }
     async GetApprovedStudentsAsync() {
         const students = await StudentModel_1.StudentModel.find({
-            Status: StudentModel_1.StudentRequestStatusEnum.Approved
+            Status: StudentModel_1.StudentRequestStatusEnum.Approved,
+            IsDeleted: { $ne: true }
         })
             .sort({ CreatedAt: -1 })
             .exec();
